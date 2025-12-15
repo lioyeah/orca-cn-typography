@@ -14,7 +14,7 @@
 
 ## 🚀 安装与使用
 
-1. 从 Releases 下载 ZIP（https://github.com/lioyeah/orca-cn-typography/releases），解压得到插件目录（例如 `orca-cn-typography`），放入 OrcaNote 插件目录后启用。
+1. 从 Releases 下载 ZIP（ https://github.com/lioyeah/orca-cn-typography/releases ），解压得到插件目录（例如 `orca-cn-typography`），放入 OrcaNote 插件目录后启用。
 2. 在插件设置中按需配置上述选项；变更通常会实时生效。
 3. 若未生效，请尝试重启 OrcaNote 或重新启用插件。
 

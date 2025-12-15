@@ -1,10 +1,29 @@
-// my-font-plugin/dist/index.js
+// orca-cn-typography/dist/index.js
 // Version: 1.1.0 (添加了全局行高，并进行了代码结构优化和注释)
 // Description: OrcaNote 插件，用于自定义字体族、全局基础字体大小和全局行高。
 
 // --- 全局变量 ---
-let currentPluginName = "my-font-plugin"; // 当前插件的名称，会在 load 时被 OrcaNote 传入的正确名称覆盖
+let currentPluginName = "orca-cn-typography";
 let unsubscribeFromSettings = null; // 用于保存 Valtio 设置订阅的取消函数
+let debugLogsEnabled = false;
+const originalConsoleLog = console.log.bind(console);
+function toBool(v) {
+  return v === true || (typeof v === 'string' && v.toLowerCase() === 'true');
+}
+function setDebugLogging(enabled) {
+  debugLogsEnabled = !!enabled;
+  console.log = function(...args) {
+    const first = args[0];
+    const isOurLog = typeof first === 'string' && first.startsWith(`[${currentPluginName}]`);
+    if (!isOurLog) return originalConsoleLog(...args);
+    if (debugLogsEnabled) return originalConsoleLog(...args);
+  };
+}
+function notifyInfo(message) {
+  if (debugLogsEnabled) {
+    orca.notify("info", message);
+  }
+}
 
 // --- 常量定义 ---
 // 全局基础字体大小的像素值范围 (用于验证)
@@ -16,35 +35,11 @@ const DEFAULT_BASE_FONT_SIZE_STRING = "16px"; // schema 中 baseFontSize 的默�
 const DEFAULT_GLOBAL_LINE_HEIGHT = "1.6";
 
 // CSS 自定义属性名称常量 (方便管理和避免拼写错误)
-const CSS_VAR_EDITOR_FONT_FAMILY = '--orca-fontfamily-editor';
-const CSS_VAR_UI_FONT_FAMILY = '--orca-fontfamily-ui';
-const CSS_VAR_CODE_FONT_FAMILY = '--orca-fontfamily-code';
 const CSS_VAR_BASE_FONT_SIZE = '--orca-fontsize-base';
 const CSS_VAR_GLOBAL_LINE_HEIGHT = '--orca-lineheight-md'; // 我们用这个变量实现全局行高
 
 // --- 插件设置的结构定义 (Schema) ---
 const settingsSchema = {
-  // --- 字体族设置 ---
-  editorFontFamily: {
-    label: "编辑器字体族 (Editor Font Family)",
-    type: "string",
-    defaultValue: '"LXGW WenKai TC", "霞鹜文楷 TC", serif',
-    description: '例如: "LXGW WenKai TC", serif 或 Arial, sans-serif',
-  },
-  uiFontFamily: {
-    label: "用户界面字体族 (UI Font Family)",
-    type: "string",
-    defaultValue: '"Microsoft YaHei UI", "微软雅黑", sans-serif',
-    description: '例如: "微软雅黑", sans-serif。控制整体 UI 界面的字体。',
-  },
-  codeFontFamily: {
-    label: "代码区域字体族 (Code Font Family)",
-    type: "string",
-    defaultValue: 'Consolas, "Fira Code", "Source Code Pro", monospace',
-    description: '例如: "Fira Code", monospace',
-  },
-
-  // --- 全局尺寸设置 ---
   baseFontSize: {
     label: `全局基础字体大小 (Base Font Size, 建议 ${MIN_BASE_FONT_SIZE_PX}px-${MAX_BASE_FONT_SIZE_PX}px)`,
     type: "string",
@@ -56,6 +51,90 @@ const settingsSchema = {
     type: "string",
     defaultValue: DEFAULT_GLOBAL_LINE_HEIGHT,
     description: `修改全局行高 (通过影响 ${CSS_VAR_GLOBAL_LINE_HEIGHT})。例如: "${DEFAULT_GLOBAL_LINE_HEIGHT}", "1.5", "1.8em"。`
+  },
+  enableAutoSpacing: {
+    label: "智能中英数字间距 (Auto Spacing)",
+    type: "boolean",
+    defaultValue: false,
+    description: "显示层自动空格：中文与英文/数字之间加空格；支持增强与自定义。"
+  },
+  enableEnhancedSpacing: {
+    label: "增强空格规则 (Enhanced)",
+    type: "boolean",
+    defaultValue: true,
+    description: "开启单位空格与°/%例外：如 10Gbps→10 Gbps；233°、15% 不加空格。"
+  },
+  customSpacingRules: {
+    label: "自定义空格规则 (JSON)",
+    type: "string",
+    defaultValue: "",
+    description: "示例: [{\"pattern\":\"(?<=[0-9])GB\\\\b\",\"replacement\":\" GB\"}]。pattern为正则(不含/)，replacement为替换文本；按序执行；仅作用显示层。"
+  },
+  enablePunctuationPreview: {
+    label: "标点/引号规范预览 (Punctuation)",
+    type: "boolean",
+    defaultValue: false,
+    description: "显示层规范化：去除不必要空格、引号样式转换。"
+  },
+  enablePunctuationEnhanced: {
+    label: "增强标点规则",
+    type: "boolean",
+    defaultValue: true,
+    description: "移除全角标点前空格、开口标点后空格等。"
+  },
+  punctuationStyle: {
+    label: "引号风格 (Style)",
+    type: "string",
+    defaultValue: "mainland",
+    description: "mainland: 中文用“”/‘’；tw-hk: 中文用「」/『』；tech: 中文用“”/‘’，英文ASCII引号保留。"
+  },
+  customPunctuationRules: {
+    label: "自定义标点规则 (JSON)",
+    type: "string",
+    defaultValue: "",
+    description: "示例: [{\"pattern\":\"“([^”]+)”\",\"replacement\":\"『$1』\"}]。用于按需覆盖转换。"
+  },
+  bodyLigatures: {
+    label: "正文连字 (Body Ligatures)",
+    type: "boolean",
+    defaultValue: true,
+    description: "在正文区域启用字体连字以优化西文排版。"
+  },
+  codeLigatures: {
+    label: "代码连字 (Code Ligatures)",
+    type: "boolean",
+    defaultValue: false,
+    description: "在代码区域启用连字。默认关闭以避免符号误读。"
+  },
+  numericTabular: {
+    label: "表格数字对齐 (Tabular Numerics)",
+    type: "boolean",
+    defaultValue: true,
+    description: "启用等宽数字，在表格和对齐场景更清晰。"
+  },
+  transformRootSelector: {
+    label: "变换作用范围选择器 (Root Selector)",
+    type: "string",
+    defaultValue: ".markdown-body",
+    description: "文本变换的根容器选择器。若匹配不到则回退至 body。"
+  },
+  transformDebounceMs: {
+    label: "变换防抖毫秒 (Debounce Ms)",
+    type: "string",
+    defaultValue: "75",
+    description: "MutationObserver 的防抖时间，单位毫秒。数值越大性能越稳但实时性降低。"
+  },
+  unitWhitelist: {
+    label: "单位白名单 (Units CSV)",
+    type: "string",
+    defaultValue: "GB,Gbps,TB,MB,KB,px,ms,s,GHz,MHz,B,KiB,MiB,GiB,TiB,ns,us,µs,min,h",
+    description: "逗号分隔的单位列表，用于数字与单位之间自动加空格。"
+  },
+  debugLogs: {
+    label: "调试日志 (Debug Logs)",
+    type: "boolean",
+    defaultValue: false,
+    description: "启用后将显示详细的调试日志与信息通知。默认关闭以减少噪声。"
   }
 };
 
@@ -97,6 +176,127 @@ function applyOrRemoveCssVar(variableName, value) {
   }
 }
 
+const TYPO_STYLE_ID = currentPluginName + '-typography';
+function ensureTypoStyle(){
+  let el = document.getElementById(TYPO_STYLE_ID);
+  if(!el){ el = document.createElement('style'); el.id = TYPO_STYLE_ID; document.head.appendChild(el); }
+  return el;
+}
+function updateTypographyStyles({ bodyLigatures, codeLigatures, numericTabular }){
+  const el = ensureTypoStyle();
+  const bodyLiga = toBool(bodyLigatures) ? 'normal' : 'none';
+  const codeLiga = toBool(codeLigatures) ? 'normal' : 'none';
+  const numeric = toBool(numericTabular) ? 'tabular-nums lining-nums' : 'normal';
+  el.textContent = `body{font-variant-ligatures:${bodyLiga}}code,pre,kbd,samp,.code,.code-block{font-variant-ligatures:${codeLiga}}body,.markdown-body,main,article{font-variant-numeric:${numeric}}`;
+}
+
+let textTransformObserver = null;
+let textTransformDebounceTimer = null;
+let textTransformRoot = null;
+function compileRules(json){
+  try{
+    const arr = JSON.parse(String(json||''));
+    if(!Array.isArray(arr)) return [];
+    return arr.map(r=>({p:new RegExp(r.pattern,'g'),rep:String(r.replacement||'')})).filter(x=>x.p);
+  }catch(_){ return []; }
+}
+const CJK_RANGE='[\\u2E80-\\u2EFF\\u2F00-\\u2FDF\\u3040-\\u30FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF]';
+const reCjkThenLat=new RegExp('('+CJK_RANGE+')([A-Za-z0-9])','g');
+const reLatThenCjk=new RegExp('([A-Za-z0-9])('+CJK_RANGE+')','g');
+function buildUnitRegex(csv){
+  const units = String(csv||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const pattern = units.length ? units.map(u=>u.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|') : 'GB|Gbps|TB|MB|KB|ms|s|GHz|MHz|px';
+  return new RegExp(`([0-9]+)(?=(?:${pattern})\\b)`,'g');
+}
+const defaultExceptionRe=/([0-9]+)\\s*(°C|°F|°|%)/g;
+const beforeFullWidth=/\s+([，。；：？！、)”’】》〕〉）])/g;
+const afterOpening=/([（［｛【《〔〈“‘])\s+/g;
+function shouldSkipTextNode(n){
+  const el=n.parentElement; if(!el) return true;
+  const skip=['CODE','PRE','KBD','SAMP','SCRIPT','STYLE','A'];
+  if(skip.includes(el.tagName)) return true;
+  if(el.closest('[contenteditable="true"], textarea, input')) return true;
+  if(el.closest('code, pre, kbd, samp')) return true;
+  if(el.closest('.code, .code-block, .inline-code')) return true;
+  if(el.closest('[class*="hljs"], [class*="code"], [role="code"], [data-code-block], [data-lang], [data-language]')) return true;
+  if(el.closest('.cm-content, .cm-line, .CodeMirror, .monaco-editor, .ace_editor')) return true;
+  return false;
+}
+function applySpacing(s,cfg){
+  s=String(s).replace(reCjkThenLat,'$1 $2').replace(reLatThenCjk,'$1 $2');
+  if(cfg.enhanced){
+    const uRe = cfg.unitRe || buildUnitRegex('');
+    const exRe = cfg.exceptionRe || defaultExceptionRe;
+    s=s.replace(uRe,'$1 ').replace(exRe,'$1$2');
+  }
+  for(const r of (cfg.customSpacing||[])){ try{ s=s.replace(r.p,r.rep);}catch(_){}}
+  return s;
+}
+function applyPunctuation(s,cfg){
+  if(!cfg.enabled) return s;
+  s=String(s);
+  if(cfg.enhanced){ s=s.replace(beforeFullWidth,'$1').replace(afterOpening,'$1'); }
+  const style=(cfg.style||'mainland').toLowerCase();
+  if(style==='mainland'){
+    s=s.replace(/『([^』]+)』/g,'‘$1’').replace(/「([^「]+)」/g,'“$1”');
+    s=s.replace(new RegExp('('+CJK_RANGE+')\\s*"([^"]+)"\\s*('+CJK_RANGE+')','g'),'$1“$2”$3');
+    s=s.replace(new RegExp('('+CJK_RANGE+")\\s*'([^']+)'\\s*("+CJK_RANGE+')','g'),'$1‘$2’$3');
+  } else if(style==='tw-hk'){
+    s=s.replace(/“([^”]+)”/g,'「$1」').replace(/‘([^’]+)’/g,'『$1』');
+  } else if(style==='tech'){
+    s=s.replace(/『([^』]+)』/g,'‘$1’').replace(/「([^「]+)」/g,'“$1”');
+  }
+  for(const r of (cfg.customPunc||[])){ try{ s=s.replace(r.p,r.rep);}catch(_){}}
+  return s;
+}
+function processTree(root,cfg){
+  try{
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:(n)=>{
+      if(!n.nodeValue||!/\S/.test(n.nodeValue)) return NodeFilter.FILTER_REJECT;
+      if(shouldSkipTextNode(n)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }});
+    let node;
+    while((node=walker.nextNode())){
+      const t=node.nodeValue;
+      let s=applySpacing(t,cfg);
+      s=applyPunctuation(s,{enabled:cfg.puncEnabled, enhanced:cfg.puncEnhanced, style:cfg.puncStyle, customPunc:cfg.customPunc});
+      if(s!==t){
+        node.nodeValue=s;
+        if(cfg.highlight){ const p=node.parentElement; if(p) p.setAttribute('data-typo-touched',''); }
+      }
+    }
+  }catch(_){}
+}
+function getTransformRoot(selector){
+  if(selector){
+    try { const el=document.querySelector(selector); if(el) return el; } catch(_){}
+  }
+  return document.body;
+}
+function scheduleProcess(cfg){
+  if(textTransformDebounceTimer) return;
+  textTransformDebounceTimer = setTimeout(()=>{
+    textTransformDebounceTimer = null;
+    if(textTransformRoot) processTree(textTransformRoot,cfg);
+  }, cfg.debounceMs || 75);
+}
+function startTextTransforms(cfg){
+  if(textTransformObserver) return;
+  textTransformRoot = getTransformRoot(cfg.rootSelector);
+  processTree(textTransformRoot,cfg);
+  textTransformObserver=new MutationObserver((mut)=>{ scheduleProcess(cfg); });
+  textTransformObserver.observe(textTransformRoot,{childList:true,subtree:true});
+}
+function stopTextTransforms(){
+  if(textTransformObserver){
+    textTransformObserver.disconnect();
+    textTransformObserver=null;
+  }
+  textTransformRoot=null;
+  if(textTransformDebounceTimer){ clearTimeout(textTransformDebounceTimer); textTransformDebounceTimer=null; }
+}
+
 /**
  * 应用字体族相关的设置。
  * @param {object} params - 包含各字体族设置值的对象。
@@ -104,11 +304,7 @@ function applyOrRemoveCssVar(variableName, value) {
  * @param {string} params.uiFontFamily
  * @param {string} params.codeFontFamily
  */
-function applyFontFamilySettings({ editorFontFamily, uiFontFamily, codeFontFamily }) {
-  applyOrRemoveCssVar(CSS_VAR_EDITOR_FONT_FAMILY, editorFontFamily);
-  applyOrRemoveCssVar(CSS_VAR_UI_FONT_FAMILY, uiFontFamily);
-  applyOrRemoveCssVar(CSS_VAR_CODE_FONT_FAMILY, codeFontFamily);
-}
+function applyFontFamilySettings() {}
 
 /**
  * 应用并验证全局基础字体大小设置。
@@ -162,22 +358,48 @@ function applyGlobalLineHeightSetting(globalLineHeightSetting) {
 
 // --- 核心样式应用函数 (现在更为简洁) ---
 function applyCustomStyles(savedSettings) {
-  console.log(`[${currentPluginName}] applyCustomStyles TRACE - 1. Called with savedSettings:`, savedSettings ? JSON.parse(JSON.stringify(savedSettings)) : "undefined");
-
-  // 获取所有设置的最终生效值
-  const editorFontFamily = getSettingValue('editorFontFamily', savedSettings);
-  const uiFontFamily = getSettingValue('uiFontFamily', savedSettings);
-  const codeFontFamily = getSettingValue('codeFontFamily', savedSettings);
   const baseFontSize = getSettingValue('baseFontSize', savedSettings);
   const globalLineHeight = getSettingValue('globalLineHeight', savedSettings);
+  const bodyLigatures = getSettingValue('bodyLigatures', savedSettings);
+  const codeLigatures = getSettingValue('codeLigatures', savedSettings);
+  const numericTabular = getSettingValue('numericTabular', savedSettings);
+  const enableAutoSpacing = toBool(getSettingValue('enableAutoSpacing', savedSettings));
+  const enableEnhancedSpacing = toBool(getSettingValue('enableEnhancedSpacing', savedSettings));
+  const customSpacingRulesRaw = getSettingValue('customSpacingRules', savedSettings);
+  const compiledSpacingRules = compileRules(customSpacingRulesRaw);
+  const enablePunctuationPreview = toBool(getSettingValue('enablePunctuationPreview', savedSettings));
+  const enablePunctuationEnhanced = toBool(getSettingValue('enablePunctuationEnhanced', savedSettings));
+  const punctuationStyle = String(getSettingValue('punctuationStyle', savedSettings) || 'mainland');
+  const customPunctuationRulesRaw = getSettingValue('customPunctuationRules', savedSettings);
+  const compiledPuncRules = compileRules(customPunctuationRulesRaw);
+  const transformRootSelector = getSettingValue('transformRootSelector', savedSettings);
+  const transformDebounceMsStr = getSettingValue('transformDebounceMs', savedSettings);
+  const unitWhitelistCsv = getSettingValue('unitWhitelist', savedSettings);
+  const debounceMsParsed = parseInt(String(transformDebounceMsStr||'75'),10);
+  const debounceMs = isNaN(debounceMsParsed) ? 75 : Math.max(0, debounceMsParsed);
+  const unitRegex = buildUnitRegex(unitWhitelistCsv);
 
-  console.log(`[${currentPluginName}] applyCustomStyles TRACE - 3. Effective values to apply:`, {
-    editorFontFamily, uiFontFamily, codeFontFamily, baseFontSize, globalLineHeight
-  });
-
-  applyFontFamilySettings({ editorFontFamily, uiFontFamily, codeFontFamily });
+  applyFontFamilySettings();
   applyBaseFontSizeSetting(baseFontSize);
   applyGlobalLineHeightSetting(globalLineHeight);
+  updateTypographyStyles({ bodyLigatures, codeLigatures, numericTabular });
+  if (enableAutoSpacing || enablePunctuationPreview) {
+    startTextTransforms({
+      enhanced: enableEnhancedSpacing,
+      customSpacing: compiledSpacingRules,
+      unitRe: unitRegex,
+      exceptionRe: defaultExceptionRe,
+      puncEnabled: enablePunctuationPreview,
+      puncEnhanced: enablePunctuationEnhanced,
+      puncStyle: punctuationStyle,
+      customPunc: compiledPuncRules,
+      rootSelector: String(transformRootSelector||''),
+      debounceMs,
+      highlight: false
+    });
+  } else {
+    stopTextTransforms();
+  }
 }
 
 // --- 插件生命周期函数 ---
@@ -187,39 +409,37 @@ function applyCustomStyles(savedSettings) {
  * 负责注册设置、加载初始设置、应用样式、订阅设置变化。
  */
 export async function load(pluginName) {
-  currentPluginName = pluginName; // 更新为 OrcaNote 传入的实际插件名
-  console.log(`[${currentPluginName}] load TRACE - 1. Plugin loading... (Version: 1.1.0)`);
-
+  currentPluginName = pluginName;
   try {
-    // 注册设置 Schema
+    const initialSettings = orca.state.plugins[currentPluginName]?.settings;
+    const debugSetting = getSettingValue('debugLogs', initialSettings);
+    setDebugLogging(toBool(debugSetting));
+    console.log(`[${currentPluginName}] load TRACE - 1. Plugin loading... (Version: 1.1.0)`);
+
     await orca.plugins.setSettingsSchema(currentPluginName, settingsSchema);
     console.log(`[${currentPluginName}] load TRACE - 2. Settings schema registered.`);
 
-    // 获取并应用初始设置
-    // orca.state.plugins[currentPluginName]?.settings 会返回已保存的设置对象，或者在没有任何设置被保存过时返回 undefined
-    const initialSettings = orca.state.plugins[currentPluginName]?.settings;
-    console.log(`[${currentPluginName}] load TRACE - 3. Initial settings from orca.state:`, initialSettings ? JSON.parse(JSON.stringify(initialSettings)) : "undefined");
-    applyCustomStyles(initialSettings); // applyCustomStyles 内部会处理 initialSettings 为 undefined 的情况 (使用 schema 默认值)
+    applyCustomStyles(initialSettings);
 
-    // 订阅设置变化 (使用 Valtio)
     if (window.Valtio && typeof window.Valtio.subscribe === 'function') {
       const pluginSettingsPathRoot = ['plugins', currentPluginName, 'settings'];
       unsubscribeFromSettings = window.Valtio.subscribe(orca.state, (ops) => {
-        // 检查发生变化的状态路径是否与本插件的设置相关
         const changedRelevantSettings = ops.some(opChange => {
-          const path = opChange[1]; // path 是一个数组，例如 ['plugins', 'my-font-plugin', 'settings', 'editorFontFamily']
+          const path = opChange[1];
           return (
             Array.isArray(path) &&
             path.length >= pluginSettingsPathRoot.length &&
-            path[0] === pluginSettingsPathRoot[0] && // 'plugins'
-            path[1] === pluginSettingsPathRoot[1] && // currentPluginName
-            path[2] === pluginSettingsPathRoot[2]    // 'settings'
+            path[0] === pluginSettingsPathRoot[0] &&
+            path[1] === pluginSettingsPathRoot[1] &&
+            path[2] === pluginSettingsPathRoot[2]
           );
         });
 
         if (changedRelevantSettings) {
           const newSettings = orca.state.plugins[currentPluginName]?.settings;
-          console.log(`[${currentPluginName}] load TRACE - 5. Settings changed via subscription, new settings:`, newSettings ? JSON.parse(JSON.stringify(newSettings)) : "undefined");
+          console.log(`[${currentPluginName}] load TRACE - 5. Settings changed via subscription`);
+          const debugSetting2 = getSettingValue('debugLogs', newSettings);
+          setDebugLogging(toBool(debugSetting2));
           applyCustomStyles(newSettings);
         }
       });
@@ -229,7 +449,7 @@ export async function load(pluginName) {
       orca.notify("warn", `[${currentPluginName}] 字体样式设置实时更新可能不可用，更改后请尝试重启插件或应用。`);
     }
 
-    orca.notify("info", `[${currentPluginName}] 插件已加载，请在设置中配置字体样式！`);
+    notifyInfo(`[${currentPluginName}] 插件已加载，请在设置中配置字体样式！`);
   } catch (error) {
     console.error(`[${currentPluginName}] load TRACE - E. Error loading plugin:`, error);
     orca.notify("error", `[${currentPluginName}] 加载失败: ${error.message}`);
@@ -251,11 +471,13 @@ export async function unload() {
   }
 
   // 移除所有本插件可能设置过的 CSS 自定义属性
-  document.documentElement.style.removeProperty(CSS_VAR_EDITOR_FONT_FAMILY);
-  document.documentElement.style.removeProperty(CSS_VAR_UI_FONT_FAMILY);
-  document.documentElement.style.removeProperty(CSS_VAR_CODE_FONT_FAMILY);
   document.documentElement.style.removeProperty(CSS_VAR_BASE_FONT_SIZE);
   document.documentElement.style.removeProperty(CSS_VAR_GLOBAL_LINE_HEIGHT);
+
+  stopTextTransforms();
+  const styleEl = document.getElementById(TYPO_STYLE_ID);
+  if (styleEl) styleEl.remove();
+  console.log = originalConsoleLog;
 
   console.log(`[${currentPluginName}] unload TRACE - 3. Custom font styles removed from :root.`);
   orca.notify("info", `[${currentPluginName}] 插件已卸载，自定义字体样式已移除。`);

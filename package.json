@@ -1,7 +1,7 @@
 {
-  "name": "my-font-plugin",
+  "name": "orca-cn-typography",
   "version": "0.1.0",
-  "description": "一个简单的自定义字体插件。",
+  "description": "OrcaNote 中文高级排版增强插件。",
   "main": "dist/index.js",
   "type": "module"
 }

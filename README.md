@@ -1,6 +1,6 @@
 # OrcaNote 高级排版增强插件 (OrcaNote Typography Enhancer)
 
-本插件为 [OrcaNote](https://orca-studio.com) (虎鲸笔记) 提供符合中文写作规范的高级排版增强能力，覆盖自动空格、单位空格、标点与引号规范、数字对齐与连字等显示层优化。同时保留全局基础字号与行高控制，避免与 OrcaNote 内置字体选择冲突。
+本插件为 [OrcaNote](https://orca-studio.com) (虎鲸笔记) 提供符合中文写作规范的高级排版增强能力（基于[中文排版指南](https://github.com/aaranxu/chinese-copywriting-guidelines)），覆盖自动空格、单位空格、标点与引号规范、数字对齐与连字等显示层优化。同时保留全局基础字号与行高控制，避免与 OrcaNote 内置字体选择冲突。
 
 ## ✨ 主要功能
 

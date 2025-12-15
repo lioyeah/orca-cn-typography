@@ -111,3 +111,24 @@ function sum(a, b) { return a + b; }
 结果补充：
 - `customSpacingRules/customPunctuationRules` 的 JSON 规则按序执行，可覆盖默认行为
 - 无效正则或替换将被忽略，不影响其它规则
+
+### 场景：多级列表文本规范
+示例文本：
+- 第一层：今天出去买菜花了5000元，宽带10Gbps，SSD20TB。
+  - 第二层：引用 "你好" ，（ 这是开头）继续说明；链接https://example.com获取详情。
+    - 第三层：在LeanCloud上数据存储是围绕AVObject进行的；字号16px；响应10ms。
+- 另一项：容量20MB、大小64KB；时间5s；频率2GHz/500MHz。
+  1. 序号一：中文English混合在LeanCloud上AVObject进行。
+  2. 序号二：今天是233 ° 的高温，提升 15 %。
+
+判定标准：
+- 自动空格：中文与英文/数字边界处加空格，如“在LeanCloud上”→“在 LeanCloud 上”“AVObject进行”→“AVObject 进行”。
+- 单位空格：`10Gbps/20TB/16px/10ms/20MB/64KB/5s/2GHz/500MHz` 应显示为 `10 Gbps/20 TB/16 px/10 ms/20 MB/64 KB/5 s/2 GHz/500 MHz`。
+- 例外单位：`233 °`→`233°`，`15 %`→`15%`。
+- URL 两侧：`链接https://example.com获取详情`→`链接 https://example.com 获取详情`。
+- 标点空格：`"你好" ，`→`"你好"，`；`（ 这是`→`（这是`；列表结构与缩进不被破坏。
+- 引号风格：中文语境的引号按当前风格转换（如 `tw-hk` →「」/『』）；代码/链接文本不转换。
+
+结果补充：
+- 列表项的 `-`、数字序号与缩进层级不应被更改；只对文本内容进行显示层规范化。
+- 若发现变换影响了列表层级，通常是选择器或容器设置不当，应回退到 `.markdown-body`。

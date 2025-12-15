@@ -52,6 +52,12 @@ const settingsSchema = {
     defaultValue: DEFAULT_GLOBAL_LINE_HEIGHT,
     description: `修改全局行高 (通过影响 ${CSS_VAR_GLOBAL_LINE_HEIGHT})。例如: "${DEFAULT_GLOBAL_LINE_HEIGHT}", "1.5", "1.8em"。`
   },
+  autoProcessing: {
+    label: "自动处理 (Auto Processing)",
+    type: "boolean",
+    defaultValue: true,
+    description: "开启后实时应用空格与标点规则；关闭则仅硬格式化生效。"
+  },
   enableAutoSpacing: {
     label: "智能中英数字间距 (Auto Spacing)",
     type: "boolean",
@@ -121,8 +127,20 @@ const settingsSchema = {
   transformDebounceMs: {
     label: "变换防抖毫秒 (Debounce Ms)",
     type: "string",
-    defaultValue: "75",
+    defaultValue: "5000",
     description: "MutationObserver 的防抖时间，单位毫秒。数值越大性能越稳但实时性降低。"
+  },
+  pauseOnTyping: {
+    label: "输入时暂停实时处理",
+    type: "boolean",
+    defaultValue: true,
+    description: "打字期间暂停变换，空闲后再处理。"
+  },
+  typingIdleMs: {
+    label: "输入空闲触发毫秒",
+    type: "string",
+    defaultValue: "3000",
+    description: "在用户停止输入后延迟多少毫秒再进行处理。"
   },
   unitWhitelist: {
     label: "单位白名单 (Units CSV)",
@@ -135,6 +153,12 @@ const settingsSchema = {
     type: "boolean",
     defaultValue: false,
     description: "启用后将显示详细的调试日志与信息通知。默认关闭以减少噪声。"
+  },
+  hardFormatToClipboard: {
+    label: "硬格式化到剪贴板 (一次性)",
+    type: "boolean",
+    defaultValue: false,
+    description: "将当前变换后的文本导出为纯文本到剪贴板。"
   }
 };
 
@@ -193,6 +217,10 @@ function updateTypographyStyles({ bodyLigatures, codeLigatures, numericTabular }
 let textTransformObserver = null;
 let textTransformDebounceTimer = null;
 let textTransformRoot = null;
+let textTransformTypingHandlers = [];
+let isUserTyping = false;
+let typingIdleTimer = null;
+let hardFormatOnceUsed = false;
 function compileRules(json){
   try{
     const arr = JSON.parse(String(json||''));
@@ -211,7 +239,7 @@ function buildUnitRegex(csv){
 const defaultExceptionRe=/([0-9]+)\\s*(°C|°F|°|%)/g;
 const beforeFullWidth=/\s+([，。；：？！、)”’】》〕〉）])/g;
 const afterOpening=/([（［｛【《〔〈“‘])\s+/g;
-function shouldSkipTextNode(n){
+function shouldSkipTextNode(n,cfg){
   const el=n.parentElement; if(!el) return true;
   const skip=['CODE','PRE','KBD','SAMP','SCRIPT','STYLE','A'];
   if(skip.includes(el.tagName)) return true;
@@ -219,7 +247,7 @@ function shouldSkipTextNode(n){
   if(el.closest('code, pre, kbd, samp')) return true;
   if(el.closest('.code, .code-block, .inline-code')) return true;
   if(el.closest('[class*="hljs"], [class*="code"], [role="code"], [data-code-block], [data-lang], [data-language]')) return true;
-  if(el.closest('.cm-content, .cm-line, .CodeMirror, .monaco-editor, .ace_editor')) return true;
+  if(!cfg?.detached && el.closest('.cm-content, .cm-line, .CodeMirror, .monaco-editor, .ace_editor')) return true;
   return false;
 }
 function applySpacing(s,cfg){
@@ -253,7 +281,7 @@ function processTree(root,cfg){
   try{
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:(n)=>{
       if(!n.nodeValue||!/\S/.test(n.nodeValue)) return NodeFilter.FILTER_REJECT;
-      if(shouldSkipTextNode(n)) return NodeFilter.FILTER_REJECT;
+      if(shouldSkipTextNode(n,cfg)) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     }});
     let node;
@@ -272,14 +300,140 @@ function getTransformRoot(selector){
   if(selector){
     try { const el=document.querySelector(selector); if(el) return el; } catch(_){}
   }
-  return document.body;
+  const md = document.querySelector('.markdown-body');
+  return md || document.body;
+}
+function getEffectiveRootForSelection(selector){
+  const base=getTransformRoot(selector);
+  try{
+    const sel=window.getSelection && window.getSelection();
+    if(sel && sel.rangeCount){
+      const anc=sel.getRangeAt(0).commonAncestorContainer;
+      const md=document.querySelector('.markdown-body');
+      if(md && md.contains(anc)) return md;
+      if(base && base.contains(anc)) return base;
+      if(md) return md;
+    }
+  }catch(_){}
+  return base;
+}
+function isBlockEl(el){
+  if(!el) return false;
+  const t=el.tagName;
+  return ['P','DIV','LI','UL','OL','H1','H2','H3','H4','H5','H6','BLOCKQUOTE','SECTION','ARTICLE','HEADER','FOOTER','MAIN'].includes(t);
+}
+function findBlockAncestor(el){
+  let cur=el;
+  while(cur && !isBlockEl(cur)) cur=cur.parentElement;
+  return cur;
+}
+async function copyText(text){
+  try{
+    if(navigator && navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+      orca.notify('info', `[${currentPluginName}] 已复制硬格式化文本到剪贴板`);
+      return true;
+    }
+  }catch(_){}
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=text; document.body.appendChild(ta); ta.select();
+    const ok=document.execCommand && document.execCommand('copy');
+    ta.remove();
+    if(ok){ orca.notify('info', `[${currentPluginName}] 已复制硬格式化文本到剪贴板`); return true; }
+  }catch(_){}
+  orca.notify('warn', `[${currentPluginName}] 无法复制到剪贴板，请手动复制。`);
+  return false;
+}
+function collectFormattedText(root){
+  let out='';
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:(n)=>{
+    if(!n.nodeValue||!/\S/.test(n.nodeValue)) return NodeFilter.FILTER_REJECT;
+    if(shouldSkipTextNode(n)) return NodeFilter.FILTER_REJECT;
+    return NodeFilter.FILTER_ACCEPT;
+  }});
+  let node; let prevBlock=null;
+  while((node=walker.nextNode())){
+    const blk=findBlockAncestor(node.parentElement);
+    if(blk && blk!==prevBlock){
+      if(out && !out.endsWith('\n')) out+='\n';
+      prevBlock=blk;
+    }
+    out+=node.nodeValue;
+  }
+  out=out.replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  return out;
+}
+async function exportHardFormatToClipboard(cfg){
+  const root=getEffectiveRootForSelection(cfg.rootSelector);
+  const holder=getSelectionHolder(root);
+  processTree(holder,{...cfg, detached:true});
+  const text=collectFormattedText(holder);
+  await copyText(text);
+}
+function getSelectionHolder(root){
+  const sel=window.getSelection && window.getSelection();
+  let holder=null;
+  if(sel && sel.rangeCount){
+    const range=sel.getRangeAt(0);
+    if(!sel.isCollapsed && range){
+      const frag=range.cloneContents();
+      holder=document.createElement('div');
+      holder.appendChild(frag);
+    }else if(sel.anchorNode){
+      const blk=findBlockAncestor(sel.anchorNode.parentElement||sel.anchorNode);
+      if(blk && root.contains(blk)){
+        holder=blk.cloneNode(true);
+      }
+    }
+  }
+  if(!holder){
+    const prefer = root;
+    holder=document.createElement('div');
+    holder.appendChild(prefer.cloneNode(true));
+  }
+  return holder;
+}
+function replaceSelectionWithText(text){
+  try{
+    if(document.queryCommandSupported && document.queryCommandSupported('insertText')){
+      const ok=document.execCommand('insertText', false, text);
+      if(ok) return true;
+    }
+  }catch(_){}
+  const sel=window.getSelection && window.getSelection();
+  if(!sel || !sel.rangeCount) return false;
+  const range=sel.getRangeAt(0);
+  range.deleteContents();
+  range.insertNode(document.createTextNode(text));
+  sel.removeAllRanges();
+  const r=document.createRange();
+  r.selectNodeContents(range.commonAncestorContainer);
+  sel.addRange(r);
+  return true;
+}
+async function hardFormatSelectionWriteback(cfg){
+  const root=getEffectiveRootForSelection(cfg.rootSelector);
+  const holder=getSelectionHolder(root);
+  processTree(holder,{...cfg, detached:true});
+  const text=collectFormattedText(holder);
+  const blocksCount = holder.querySelectorAll('p, div, li, h1, h2, h3, h4, h5, h6, blockquote, section').length;
+  if(blocksCount>1){
+    await copyText(text);
+    orca.notify('warn', `[${currentPluginName}] 检测到多块选区，为避免合并块与不可撤销，已复制到剪贴板，请使用粘贴完成写回。`);
+    return;
+  }
+  const ok=replaceSelectionWithText(text);
+  if(ok){ orca.notify('info', `[${currentPluginName}] 已写回选区的硬格式化文本`); }
+  else { orca.notify('warn', `[${currentPluginName}] 未能写回选区，请手动粘贴剪贴板内容`); await copyText(text); }
 }
 function scheduleProcess(cfg){
   if(textTransformDebounceTimer) return;
+  if(cfg.pauseTyping && isUserTyping) return;
   textTransformDebounceTimer = setTimeout(()=>{
     textTransformDebounceTimer = null;
     if(textTransformRoot) processTree(textTransformRoot,cfg);
-  }, cfg.debounceMs || 75);
+  }, cfg.debounceMs || 5000);
 }
 function startTextTransforms(cfg){
   if(textTransformObserver) return;
@@ -287,6 +441,21 @@ function startTextTransforms(cfg){
   processTree(textTransformRoot,cfg);
   textTransformObserver=new MutationObserver((mut)=>{ scheduleProcess(cfg); });
   textTransformObserver.observe(textTransformRoot,{childList:true,subtree:true});
+  const markTyping=()=>{
+    if(!cfg.pauseTyping) return;
+    isUserTyping = true;
+    if(typingIdleTimer){ clearTimeout(typingIdleTimer); typingIdleTimer=null; }
+    typingIdleTimer = setTimeout(()=>{
+      isUserTyping = false;
+      scheduleProcess(cfg);
+    }, cfg.typingIdleMs || 3000);
+  };
+  const types=['keydown','keyup','input','beforeinput','compositionstart','compositionupdate','compositionend','paste'];
+  textTransformTypingHandlers = types.map(t=>{
+    const h=(e)=>{ if(textTransformRoot && textTransformRoot.contains(e.target)){ markTyping(); } };
+    document.addEventListener(t,h,true);
+    return {t, h};
+  });
 }
 function stopTextTransforms(){
   if(textTransformObserver){
@@ -295,6 +464,11 @@ function stopTextTransforms(){
   }
   textTransformRoot=null;
   if(textTransformDebounceTimer){ clearTimeout(textTransformDebounceTimer); textTransformDebounceTimer=null; }
+  if(typingIdleTimer){ clearTimeout(typingIdleTimer); typingIdleTimer=null; }
+  if(textTransformTypingHandlers && textTransformTypingHandlers.length){
+    for(const {t,h} of textTransformTypingHandlers){ document.removeEventListener(t,h,true); }
+    textTransformTypingHandlers = [];
+  }
 }
 
 /**
@@ -363,6 +537,7 @@ function applyCustomStyles(savedSettings) {
   const bodyLigatures = getSettingValue('bodyLigatures', savedSettings);
   const codeLigatures = getSettingValue('codeLigatures', savedSettings);
   const numericTabular = getSettingValue('numericTabular', savedSettings);
+  const enableAutoProcessing = toBool(getSettingValue('autoProcessing', savedSettings));
   const enableAutoSpacing = toBool(getSettingValue('enableAutoSpacing', savedSettings));
   const enableEnhancedSpacing = toBool(getSettingValue('enableEnhancedSpacing', savedSettings));
   const customSpacingRulesRaw = getSettingValue('customSpacingRules', savedSettings);
@@ -375,15 +550,20 @@ function applyCustomStyles(savedSettings) {
   const transformRootSelector = getSettingValue('transformRootSelector', savedSettings);
   const transformDebounceMsStr = getSettingValue('transformDebounceMs', savedSettings);
   const unitWhitelistCsv = getSettingValue('unitWhitelist', savedSettings);
-  const debounceMsParsed = parseInt(String(transformDebounceMsStr||'75'),10);
-  const debounceMs = isNaN(debounceMsParsed) ? 75 : Math.max(0, debounceMsParsed);
+  const debounceMsParsed = parseInt(String(transformDebounceMsStr||'5000'),10);
+  const debounceMs = isNaN(debounceMsParsed) ? 5000 : Math.max(0, debounceMsParsed);
   const unitRegex = buildUnitRegex(unitWhitelistCsv);
+  const hardFormatToClipboard = toBool(getSettingValue('hardFormatToClipboard', savedSettings));
+  const pauseTyping = toBool(getSettingValue('pauseOnTyping', savedSettings));
+  const typingIdleMsStr = getSettingValue('typingIdleMs', savedSettings);
+  const typingIdleMsParsed = parseInt(String(typingIdleMsStr||'3000'),10);
+  const typingIdleMs = isNaN(typingIdleMsParsed) ? 3000 : Math.max(0, typingIdleMsParsed);
 
   applyFontFamilySettings();
   applyBaseFontSizeSetting(baseFontSize);
   applyGlobalLineHeightSetting(globalLineHeight);
   updateTypographyStyles({ bodyLigatures, codeLigatures, numericTabular });
-  if (enableAutoSpacing || enablePunctuationPreview) {
+  if (enableAutoProcessing && (enableAutoSpacing || enablePunctuationPreview)) {
     startTextTransforms({
       enhanced: enableEnhancedSpacing,
       customSpacing: compiledSpacingRules,
@@ -395,11 +575,32 @@ function applyCustomStyles(savedSettings) {
       customPunc: compiledPuncRules,
       rootSelector: String(transformRootSelector||''),
       debounceMs,
-      highlight: false
+      highlight: false,
+      pauseTyping,
+      typingIdleMs
     });
   } else {
     stopTextTransforms();
   }
+  if(hardFormatToClipboard && !hardFormatOnceUsed){
+    exportHardFormatToClipboard({
+      enhanced: enableEnhancedSpacing,
+      customSpacing: compiledSpacingRules,
+      unitRe: unitRegex,
+      exceptionRe: defaultExceptionRe,
+      puncEnabled: true,
+      puncEnhanced: enablePunctuationEnhanced,
+      puncStyle: punctuationStyle,
+      customPunc: compiledPuncRules,
+      rootSelector: String(transformRootSelector||''),
+      debounceMs,
+      highlight: false,
+      pauseTyping,
+      typingIdleMs
+    });
+    hardFormatOnceUsed = true;
+  }
+  if(!hardFormatToClipboard){ hardFormatOnceUsed = false; }
 }
 
 // --- 插件生命周期函数 ---
@@ -420,6 +621,78 @@ export async function load(pluginName) {
     console.log(`[${currentPluginName}] load TRACE - 2. Settings schema registered.`);
 
     applyCustomStyles(initialSettings);
+    const cmdId = `${currentPluginName}.hardFormatClipboard`;
+    orca.commands.registerCommand(cmdId, async () => {
+      try{
+        const settings = orca.state.plugins[currentPluginName]?.settings;
+        const enableEnhancedSpacing = toBool(getSettingValue('enableEnhancedSpacing', settings));
+        const customSpacingRulesRaw = getSettingValue('customSpacingRules', settings);
+        const compiledSpacingRules = compileRules(customSpacingRulesRaw);
+        const enablePunctuationEnhanced = toBool(getSettingValue('enablePunctuationEnhanced', settings));
+        const punctuationStyle = String(getSettingValue('punctuationStyle', settings) || 'mainland');
+        const customPunctuationRulesRaw = getSettingValue('customPunctuationRules', settings);
+        const compiledPuncRules = compileRules(customPunctuationRulesRaw);
+        const transformRootSelector = getSettingValue('transformRootSelector', settings);
+        const transformDebounceMsStr = getSettingValue('transformDebounceMs', settings);
+        const unitWhitelistCsv = getSettingValue('unitWhitelist', settings);
+        const debounceMsParsed = parseInt(String(transformDebounceMsStr||'5000'),10);
+        const debounceMs = isNaN(debounceMsParsed) ? 5000 : Math.max(0, debounceMsParsed);
+        const unitRegex = buildUnitRegex(unitWhitelistCsv);
+        await exportHardFormatToClipboard({
+          enhanced: enableEnhancedSpacing,
+          customSpacing: compiledSpacingRules,
+          unitRe: unitRegex,
+          exceptionRe: defaultExceptionRe,
+          puncEnabled: true,
+          puncEnhanced: enablePunctuationEnhanced,
+          puncStyle: punctuationStyle,
+          customPunc: compiledPuncRules,
+          rootSelector: String(transformRootSelector||''),
+          debounceMs,
+          highlight: false
+        });
+      }catch(e){
+        console.error(`[${currentPluginName}] hardFormatClipboard error`, e);
+        orca.notify('error', `[${currentPluginName}] 硬格式化失败：${e?.message||e}`);
+      }
+    }, "硬格式化到剪贴板");
+    
+    const cmdIdWrite = `${currentPluginName}.hardFormatWriteback`;
+    orca.commands.registerCommand(cmdIdWrite, async () => {
+      try{
+        const settings = orca.state.plugins[currentPluginName]?.settings;
+        const enableEnhancedSpacing = toBool(getSettingValue('enableEnhancedSpacing', settings));
+        const customSpacingRulesRaw = getSettingValue('customSpacingRules', settings);
+        const compiledSpacingRules = compileRules(customSpacingRulesRaw);
+        const enablePunctuationEnhanced = toBool(getSettingValue('enablePunctuationEnhanced', settings));
+        const punctuationStyle = String(getSettingValue('punctuationStyle', settings) || 'mainland');
+        const customPunctuationRulesRaw = getSettingValue('customPunctuationRules', settings);
+        const compiledPuncRules = compileRules(customPunctuationRulesRaw);
+        const transformRootSelector = getSettingValue('transformRootSelector', settings);
+        const transformDebounceMsStr = getSettingValue('transformDebounceMs', settings);
+        const unitWhitelistCsv = getSettingValue('unitWhitelist', settings);
+        const debounceMsParsed = parseInt(String(transformDebounceMsStr||'5000'),10);
+        const debounceMs = isNaN(debounceMsParsed) ? 5000 : Math.max(0, debounceMsParsed);
+        const unitRegex = buildUnitRegex(unitWhitelistCsv);
+        await hardFormatSelectionWriteback({
+          enhanced: enableEnhancedSpacing,
+          customSpacing: compiledSpacingRules,
+          unitRe: unitRegex,
+          exceptionRe: defaultExceptionRe,
+          puncEnabled: true,
+          puncEnhanced: enablePunctuationEnhanced,
+          puncStyle: punctuationStyle,
+          customPunc: compiledPuncRules,
+          rootSelector: String(transformRootSelector||''),
+          debounceMs,
+          highlight: false
+        });
+      }catch(e){
+        console.error(`[${currentPluginName}] hardFormatWriteback error`, e);
+        orca.notify('error', `[${currentPluginName}] 硬格式化写回失败：${e?.message||e}`);
+      }
+    }, "硬格式化并写回选区");
+    
 
     if (window.Valtio && typeof window.Valtio.subscribe === 'function') {
       const pluginSettingsPathRoot = ['plugins', currentPluginName, 'settings'];
@@ -469,6 +742,10 @@ export async function unload() {
     unsubscribeFromSettings = null;
     console.log(`[${currentPluginName}] unload TRACE - 2. Unsubscribed from settings changes.`);
   }
+  try{
+    orca.commands.unregisterCommand(`${currentPluginName}.hardFormatClipboard`);
+    orca.commands.unregisterCommand(`${currentPluginName}.hardFormatWriteback`);
+  }catch(_){}
 
   // 移除所有本插件可能设置过的 CSS 自定义属性
   document.documentElement.style.removeProperty(CSS_VAR_BASE_FONT_SIZE);

@@ -8,7 +8,8 @@
 * 标点与引号规范化：移除中文全角标点前后多余空格；支持引号风格转换（`mainland`／`tw-hk`／`tech`）。
 * 自定义规则：提供 JSON 规则扩展空格/标点行为，按序执行到显示层，不改动原文。
 * 数字对齐与连字：启用 `font-variant-numeric: tabular-nums` 提升表格数字对齐；可配置正文/代码连字。
-* 作用范围与性能：通过选择器限定变换作用范围（默认 `.markdown-body`），并支持防抖（默认 75ms）。
+* 作用范围与性能：通过选择器限定变换作用范围（默认 `.markdown-body`），支持防抖（默认 5000ms）与“输入暂停”策略（停止输入后再处理）。
+* 硬格式化：提供命令将选区或单块内容按规则规范化并复制/写回；多块选区复制到剪贴板，单块选区就地写回；不受自动处理开关影响。
 * 基础视觉控制：保留 `--orca-fontsize-base` 全局基础字号与 `--orca-lineheight-md` 全局行高。
 * 严格跳过代码区：自动跳过 `code/pre/kbd/samp`、高亮容器（`hljs` 等）、编辑器容器（`CodeMirror/Monaco` 等）、链接与可编辑区域。
 
@@ -22,6 +23,7 @@
 
 - `baseFontSize`：全局基础字号
 - `globalLineHeight`：全局行高
+- `autoProcessing`：自动处理总开关（实时应用空格与标点；默认开启）
 - `enableAutoSpacing`：智能中英数字间距
 - `enableEnhancedSpacing`：数字-单位空格增强与例外处理
 - `customSpacingRules`：自定义空格规则（JSON）
@@ -33,15 +35,28 @@
 - `codeLigatures`：代码连字
 - `numericTabular`：表格数字对齐
 - `transformRootSelector`：变换作用范围选择器（默认 `.markdown-body`）
-- `transformDebounceMs`：变换防抖毫秒（默认 `75`）
+- `transformDebounceMs`：变换防抖毫秒（默认 `5000`）
 - `unitWhitelist`：单位白名单（CSV，默认含常见单位）
+- `pauseOnTyping`：输入时暂停实时处理（默认开启）
+- `typingIdleMs`：输入停止后延迟处理毫秒（默认 `3000`）
+- `hardFormatToClipboard`：一次性硬格式化到剪贴板（仅当前页面正文）
 - `debugLogs`：调试日志
 
 注：为避免与 OrcaNote 内置字体选择冲突，本插件已移除字体族选择项。
 
+## 🔧 命令
+
+- `orca-cn-typography.hardFormatClipboard`：硬格式化到剪贴板（支持选中文本、多块选区；在单块选区也可使用）
+- `orca-cn-typography.hardFormatWriteback`：硬格式化并写回选区（单块选区就地写回；多块选区自动复制到剪贴板以避免合并与不可撤销）
+
+说明：
+- 命令始终应用当前配置与自定义 JSON 规则，即使关闭了 `autoProcessing`。
+- 作用范围限定在正文容器（优先 `.markdown-body`），避免边栏/设置页等被处理。
+
 ## 🧪 测试与验证
 
 - 仓库内提供 `typography-test.md`，包含场景化示例与判定标准，便于他人复核。
+- 新增“多级列表文本规范”场景，验证嵌套列表与有序列表在规范化后层级与缩进不被破坏。
 - 代码区不会被显示层变换影响（已覆盖常见容器与编辑器类名）。
 
 ## 🤝 反馈与贡献 (Feedback & Contributing)

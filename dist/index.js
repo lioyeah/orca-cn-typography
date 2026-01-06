@@ -41,124 +41,130 @@ const CSS_VAR_GLOBAL_LINE_HEIGHT = '--orca-lineheight-md'; // 我们用这个变
 // --- 插件设置的结构定义 (Schema) ---
 const settingsSchema = {
   baseFontSize: {
-    label: `全局基础字体大小 (Base Font Size, 建议 ${MIN_BASE_FONT_SIZE_PX}px-${MAX_BASE_FONT_SIZE_PX}px)`,
+    label: `全局基础字体大小`,
     type: "string",
     defaultValue: DEFAULT_BASE_FONT_SIZE_STRING,
-    description: `请输入像素值 (如 16px) 或其他单位 (如 1em)。像素值建议在 ${MIN_BASE_FONT_SIZE_PX}px 到 ${MAX_BASE_FONT_SIZE_PX}px 之间。超出此范围的像素值将使用默认值 "${DEFAULT_BASE_FONT_SIZE_STRING}"。`
+    description: `设置全局字体大小（如 16px）。建议范围：${MIN_BASE_FONT_SIZE_PX}px-${MAX_BASE_FONT_SIZE_PX}px`
   },
   globalLineHeight: {
-    label: "全局行高 (Global Line Height)",
+    label: "全局行高",
     type: "string",
     defaultValue: DEFAULT_GLOBAL_LINE_HEIGHT,
-    description: `修改全局行高 (通过影响 ${CSS_VAR_GLOBAL_LINE_HEIGHT})。例如: "${DEFAULT_GLOBAL_LINE_HEIGHT}", "1.5", "1.8em"。`
+    description: `设置全局行高（如 1.6、1.8）。数值越大，行间距越大。`
+  },
+  formattingMode: {
+    label: "📝 排版模式",
+    type: "string",
+    defaultValue: "auto",
+    description: "• preview: 预览模式 - 仅视觉显示优化，不修改原文\n• auto: 自动模式 - 按 Enter 时自动应用格式化（可撤销）"
   },
   autoProcessing: {
-    label: "自动处理 (Auto Processing)",
+    label: "✨ 自动处理总开关",
     type: "boolean",
     defaultValue: true,
-    description: "开启后实时应用空格与标点规则；关闭则仅硬格式化生效。"
+    description: "开启后实时应用排版规则。关闭则只能通过命令手动格式化。"
   },
   enableAutoSpacing: {
-    label: "智能中英数字间距 (Auto Spacing)",
+    label: "🔤 中英文自动空格",
     type: "boolean",
-    defaultValue: false,
-    description: "显示层自动空格：中文与英文/数字之间加空格；支持增强与自定义。"
+    defaultValue: true,
+    description: "在中文与英文/数字之间自动添加空格。例如：「测试test」→「测试 test」"
   },
   enableEnhancedSpacing: {
-    label: "增强空格规则 (Enhanced)",
+    label: "   ↳ 增强空格规则",
     type: "boolean",
     defaultValue: true,
-    description: "开启单位空格与°/%例外：如 10Gbps→10 Gbps；233°、15% 不加空格。"
+    description: "数字与单位间加空格（如「10GB」→「10 GB」），但保留特殊符号（如「233°」「15%」不加空格）"
   },
   customSpacingRules: {
-    label: "自定义空格规则 (JSON)",
+    label: "   ↳ 自定义空格规则 (高级)",
     type: "string",
     defaultValue: "",
-    description: "示例: [{\"pattern\":\"(?<=[0-9])GB\\\\b\",\"replacement\":\" GB\"}]。pattern为正则(不含/)，replacement为替换文本；按序执行；仅作用显示层。"
+    description: "JSON 格式自定义规则。示例：[{\"pattern\":\"(?<=[0-9])GB\\\\b\",\"replacement\":\" GB\"}]"
   },
   enablePunctuationPreview: {
-    label: "标点/引号规范预览 (Punctuation)",
+    label: "🔣 标点符号规范化",
     type: "boolean",
-    defaultValue: false,
-    description: "显示层规范化：去除不必要空格、引号样式转换。"
+    defaultValue: true,
+    description: "规范化标点符号：去除多余空格、统一引号样式"
   },
   enablePunctuationEnhanced: {
-    label: "增强标点规则",
+    label: "   ↳ 增强标点规则",
     type: "boolean",
     defaultValue: true,
-    description: "移除全角标点前空格、开口标点后空格等。"
+    description: "移除全角标点前后的不必要空格"
   },
   punctuationStyle: {
-    label: "引号风格 (Style)",
+    label: "   ↳ 引号风格",
     type: "string",
     defaultValue: "mainland",
-    description: "mainland: 中文用“”/‘’；tw-hk: 中文用「」/『』；tech: 中文用“”/‘’，英文ASCII引号保留。"
+    description: "• mainland: 中文用""和''（大陆）\n• tw-hk: 中文用「」和『』（港台）\n• tech: 中英文混排优化"
   },
   customPunctuationRules: {
-    label: "自定义标点规则 (JSON)",
+    label: "   ↳ 自定义标点规则 (高级)",
     type: "string",
     defaultValue: "",
-    description: "示例: [{\"pattern\":\"“([^”]+)”\",\"replacement\":\"『$1』\"}]。用于按需覆盖转换。"
+    description: "JSON 格式自定义规则。示例：[{\"pattern\":\""([^"]+)"\",\"replacement\":\"『$1』\"}]"
   },
   bodyLigatures: {
-    label: "正文连字 (Body Ligatures)",
+    label: "🔗 正文连字",
     type: "boolean",
     defaultValue: true,
-    description: "在正文区域启用字体连字以优化西文排版。"
+    description: "在正文中启用字体连字，优化西文排版（如 fi、fl 连字）"
   },
   codeLigatures: {
-    label: "代码连字 (Code Ligatures)",
+    label: "💻 代码连字",
     type: "boolean",
     defaultValue: false,
-    description: "在代码区域启用连字。默认关闭以避免符号误读。"
+    description: "在代码块中启用连字。默认关闭以避免符号混淆（如 != 和 ≠）"
   },
   numericTabular: {
-    label: "表格数字对齐 (Tabular Numerics)",
+    label: "📊 表格数字对齐",
     type: "boolean",
     defaultValue: true,
-    description: "启用等宽数字，在表格和对齐场景更清晰。"
+    description: "使用等宽数字，在表格和数据对齐场景更清晰"
   },
   transformRootSelector: {
-    label: "变换作用范围选择器 (Root Selector)",
+    label: "⚙️ 作用范围选择器 (高级)",
     type: "string",
     defaultValue: ".markdown-body",
-    description: "文本变换的根容器选择器。若匹配不到则回退至 body。"
+    description: "CSS 选择器，限定排版规则的作用范围。默认值适用于大多数情况"
   },
   transformDebounceMs: {
-    label: "变换防抖毫秒 (Debounce Ms)",
+    label: "⚙️ 变换防抖延迟 (高级)",
     type: "string",
     defaultValue: "5000",
-    description: "MutationObserver 的防抖时间，单位毫秒。数值越大性能越稳但实时性降低。"
+    description: "文档变化后延迟多少毫秒再应用排版（单位：毫秒）。数值越大性能越好但响应越慢"
   },
   pauseOnTyping: {
-    label: "输入时暂停实时处理",
+    label: "⌨️ 输入时暂停处理",
     type: "boolean",
     defaultValue: true,
-    description: "打字期间暂停变换，空闲后再处理。"
+    description: "打字时暂停排版处理，停止输入后再应用，避免干扰输入"
   },
   typingIdleMs: {
-    label: "输入空闲触发毫秒",
+    label: "   ↳ 输入停止延迟",
     type: "string",
     defaultValue: "3000",
-    description: "在用户停止输入后延迟多少毫秒再进行处理。"
+    description: "停止输入后延迟多少毫秒再应用排版（单位：毫秒）"
   },
   unitWhitelist: {
-    label: "单位白名单 (Units CSV)",
+    label: "⚙️ 单位白名单 (高级)",
     type: "string",
     defaultValue: "GB,Gbps,TB,MB,KB,px,ms,s,GHz,MHz,B,KiB,MiB,GiB,TiB,ns,us,µs,min,h",
-    description: "逗号分隔的单位列表，用于数字与单位之间自动加空格。"
+    description: "逗号分隔的单位列表，用于数字与单位间自动加空格"
   },
   debugLogs: {
-    label: "调试日志 (Debug Logs)",
+    label: "🐛 调试日志",
     type: "boolean",
     defaultValue: false,
-    description: "启用后将显示详细的调试日志与信息通知。默认关闭以减少噪声。"
+    description: "启用后在浏览器控制台显示详细的调试信息。仅供开发调试使用"
   },
   hardFormatToClipboard: {
-    label: "硬格式化到剪贴板 (一次性)",
+    label: "📋 一次性格式化到剪贴板",
     type: "boolean",
     defaultValue: false,
-    description: "将当前变换后的文本导出为纯文本到剪贴板。"
+    description: "将当前文档的格式化结果复制到剪贴板（一次性操作）"
   }
 };
 
@@ -221,6 +227,12 @@ let textTransformTypingHandlers = [];
 let isUserTyping = false;
 let typingIdleTimer = null;
 let hardFormatOnceUsed = false;
+
+// PreviewFormatter 实例
+let previewFormatter = null;
+
+// AutoFormatter 实例
+let autoFormatter = null;
 function compileRules(json){
   try{
     const arr = JSON.parse(String(json||''));
@@ -537,6 +549,7 @@ function applyCustomStyles(savedSettings) {
   const bodyLigatures = getSettingValue('bodyLigatures', savedSettings);
   const codeLigatures = getSettingValue('codeLigatures', savedSettings);
   const numericTabular = getSettingValue('numericTabular', savedSettings);
+  const formattingMode = String(getSettingValue('formattingMode', savedSettings) || 'preview');
   const enableAutoProcessing = toBool(getSettingValue('autoProcessing', savedSettings));
   const enableAutoSpacing = toBool(getSettingValue('enableAutoSpacing', savedSettings));
   const enableEnhancedSpacing = toBool(getSettingValue('enableEnhancedSpacing', savedSettings));
@@ -563,24 +576,57 @@ function applyCustomStyles(savedSettings) {
   applyBaseFontSizeSetting(baseFontSize);
   applyGlobalLineHeightSetting(globalLineHeight);
   updateTypographyStyles({ bodyLigatures, codeLigatures, numericTabular });
-  if (enableAutoProcessing && (enableAutoSpacing || enablePunctuationPreview)) {
-    startTextTransforms({
-      enhanced: enableEnhancedSpacing,
-      customSpacing: compiledSpacingRules,
-      unitRe: unitRegex,
-      exceptionRe: defaultExceptionRe,
-      puncEnabled: enablePunctuationPreview,
-      puncEnhanced: enablePunctuationEnhanced,
-      puncStyle: punctuationStyle,
-      customPunc: compiledPuncRules,
-      rootSelector: String(transformRootSelector||''),
-      debounceMs,
-      highlight: false,
-      pauseTyping,
-      typingIdleMs
-    });
-  } else {
-    stopTextTransforms();
+  
+  // 根据 formattingMode 决定使用哪种格式化模式
+  if (formattingMode === 'preview') {
+    // Preview Mode: 显示层格式化
+    if (enableAutoProcessing && (enableAutoSpacing || enablePunctuationPreview)) {
+      // 使用 PreviewFormatter
+      if (!previewFormatter) {
+        previewFormatter = new PreviewFormatter();
+      }
+      previewFormatter.start({
+        enhanced: enableEnhancedSpacing,
+        customSpacing: compiledSpacingRules,
+        unitRe: unitRegex,
+        exceptionRe: defaultExceptionRe,
+        puncEnabled: enablePunctuationPreview,
+        puncEnhanced: enablePunctuationEnhanced,
+        puncStyle: punctuationStyle,
+        customPunc: compiledPuncRules,
+        rootSelector: String(transformRootSelector||''),
+        debounceMs,
+        highlight: false,
+        pauseTyping,
+        typingIdleMs
+      });
+    } else {
+      if (previewFormatter) {
+        previewFormatter.stop();
+      }
+    }
+  } else if (formattingMode === 'auto') {
+    // Auto Mode: 编辑层格式化
+    if (enableAutoProcessing && (enableAutoSpacing || enablePunctuationPreview)) {
+      // 使用 AutoFormatter
+      if (!autoFormatter) {
+        autoFormatter = new AutoFormatter();
+      }
+      autoFormatter.start({
+        enhanced: enableEnhancedSpacing,
+        customSpacing: compiledSpacingRules,
+        unitRe: unitRegex,
+        exceptionRe: defaultExceptionRe,
+        puncEnabled: enablePunctuationPreview,
+        puncEnhanced: enablePunctuationEnhanced,
+        puncStyle: punctuationStyle,
+        customPunc: compiledPuncRules
+      });
+    } else {
+      if (autoFormatter) {
+        autoFormatter.stop();
+      }
+    }
   }
   if(hardFormatToClipboard && !hardFormatOnceUsed){
     exportHardFormatToClipboard({
@@ -692,7 +738,6 @@ export async function load(pluginName) {
         orca.notify('error', `[${currentPluginName}] 硬格式化写回失败：${e?.message||e}`);
       }
     }, "硬格式化并写回选区");
-    
 
     if (window.Valtio && typeof window.Valtio.subscribe === 'function') {
       const pluginSettingsPathRoot = ['plugins', currentPluginName, 'settings'];
@@ -752,10 +797,776 @@ export async function unload() {
   document.documentElement.style.removeProperty(CSS_VAR_GLOBAL_LINE_HEIGHT);
 
   stopTextTransforms();
+  
+  // 清理 PreviewFormatter
+  if (previewFormatter) {
+    previewFormatter.stop();
+    previewFormatter = null;
+  }
+  
+  // 清理 AutoFormatter
+  if (autoFormatter) {
+    autoFormatter.stop();
+    autoFormatter = null;
+  }
   const styleEl = document.getElementById(TYPO_STYLE_ID);
   if (styleEl) styleEl.remove();
   console.log = originalConsoleLog;
 
   console.log(`[${currentPluginName}] unload TRACE - 3. Custom font styles removed from :root.`);
   orca.notify("info", `[${currentPluginName}] 插件已卸载，自定义字体样式已移除。`);
+}
+
+// --- PreviewFormatter 类: 显示层格式化 ---
+/**
+ * PreviewFormatter 类负责显示层格式化
+ * 不修改文档内容,仅修改 DOM 显示效果
+ */
+class PreviewFormatter {
+  constructor() {
+    this.observer = null;
+    this.debounceTimer = null;
+    this.root = null;
+    this.typingHandlers = [];
+    this.isUserTyping = false;
+    this.typingIdleTimer = null;
+    this.config = null;
+  }
+
+  /**
+   * 启动显示层格式化
+   * @param {Object} config - 配置对象
+   */
+  start(config) {
+    if (this.observer) {
+      console.warn(`[${currentPluginName}] PreviewFormatter already started`);
+      return;
+    }
+
+    this.config = config;
+    this.root = this.getRoot(config.rootSelector);
+    
+    // 立即处理一次
+    this.processTree(this.root, config);
+    
+    // 启动 MutationObserver
+    this.observer = new MutationObserver(() => {
+      this.scheduleProcess();
+    });
+    this.observer.observe(this.root, { childList: true, subtree: true });
+    
+    // 启动输入监听
+    this.startTypingHandlers(config);
+    
+    console.log(`[${currentPluginName}] PreviewFormatter started`);
+  }
+
+  /**
+   * 停止显示层格式化
+   */
+  stop() {
+    if (this.observer) {
+      this.observer.disconnect();
+      this.observer = null;
+    }
+    
+    this.root = null;
+    
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    
+    if (this.typingIdleTimer) {
+      clearTimeout(this.typingIdleTimer);
+      this.typingIdleTimer = null;
+    }
+    
+    if (this.typingHandlers && this.typingHandlers.length) {
+      for (const { t, h } of this.typingHandlers) {
+        document.removeEventListener(t, h, true);
+      }
+      this.typingHandlers = [];
+    }
+    
+    this.config = null;
+    
+    console.log(`[${currentPluginName}] PreviewFormatter stopped`);
+  }
+
+  /**
+   * 获取格式化根元素
+   */
+  getRoot(selector) {
+    if (selector) {
+      try {
+        const el = document.querySelector(selector);
+        if (el) return el;
+      } catch (_) {}
+    }
+    const md = document.querySelector('.markdown-body');
+    return md || document.body;
+  }
+
+  /**
+   * 调度处理
+   */
+  scheduleProcess() {
+    if (this.debounceTimer) return;
+    
+    if (this.config?.pauseTyping && this.isUserTyping) return;
+    
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      if (this.root) this.processTree(this.root, this.config);
+    }, this.config?.debounceMs || 5000);
+  }
+
+  /**
+   * 启动输入处理器
+   */
+  startTypingHandlers(config) {
+    const markTyping = () => {
+      if (!config?.pauseTyping) return;
+      
+      this.isUserTyping = true;
+      
+      if (this.typingIdleTimer) {
+        clearTimeout(this.typingIdleTimer);
+        this.typingIdleTimer = null;
+      }
+      
+      this.typingIdleTimer = setTimeout(() => {
+        this.isUserTyping = false;
+        this.scheduleProcess();
+      }, config?.typingIdleMs || 3000);
+    };
+    
+    const types = ['keydown', 'keyup', 'input', 'beforeinput', 'compositionstart', 'compositionupdate', 'compositionend', 'paste'];
+    this.typingHandlers = types.map(t => {
+      const h = (e) => {
+        if (this.root && this.root.contains(e.target)) {
+          markTyping();
+        }
+      };
+      document.addEventListener(t, h, true);
+      return { t, h };
+    });
+  }
+
+  /**
+   * 处理 DOM 树
+   */
+  processTree(root, cfg) {
+    try {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (n) => {
+          if (!n.nodeValue || !/\S/.test(n.nodeValue)) return NodeFilter.FILTER_REJECT;
+          if (this.shouldSkipTextNode(n, cfg)) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      
+      let node;
+      while ((node = walker.nextNode())) {
+        const t = node.nodeValue;
+        let s = this.applySpacing(t, cfg);
+        s = this.applyPunctuation(s, {
+          enabled: cfg.puncEnabled,
+          enhanced: cfg.puncEnhanced,
+          style: cfg.puncStyle,
+          customPunc: cfg.customPunc
+        });
+        
+        if (s !== t) {
+          node.nodeValue = s;
+          if (cfg.highlight) {
+            const p = node.parentElement;
+            if (p) p.setAttribute('data-typo-touched', '');
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  /**
+   * 判断是否跳过文本节点
+   */
+  shouldSkipTextNode(n, cfg) {
+    const el = n.parentElement;
+    if (!el) return true;
+    
+    const skip = ['CODE', 'PRE', 'KBD', 'SAMP', 'SCRIPT', 'STYLE', 'A'];
+    if (skip.includes(el.tagName)) return true;
+    
+    if (el.closest('[contenteditable="true"], textarea, input')) return true;
+    if (el.closest('code, pre, kbd, samp')) return true;
+    if (el.closest('.code, .code-block, .inline-code')) return true;
+    if (el.closest('[class*="hljs"], [class*="code"], [role="code"], [data-code-block], [data-lang], [data-language]')) return true;
+    if (!cfg?.detached && el.closest('.cm-content, .cm-line, .CodeMirror, .monaco-editor, .ace_editor')) return true;
+    
+    return false;
+  }
+
+  /**
+   * 应用空格规则
+   */
+  applySpacing(s, cfg) {
+    s = String(s).replace(reCjkThenLat, '$1 $2').replace(reLatThenCjk, '$1 $2');
+    
+    if (cfg.enhanced) {
+      const uRe = cfg.unitRe || buildUnitRegex('');
+      const exRe = cfg.exceptionRe || defaultExceptionRe;
+      s = s.replace(uRe, '$1 ').replace(exRe, '$1$2');
+    }
+    
+    for (const r of (cfg.customSpacing || [])) {
+      try {
+        s = s.replace(r.p, r.rep);
+      } catch (_) {}
+    }
+    
+    return s;
+  }
+
+  /**
+   * 应用标点规则
+   */
+  applyPunctuation(s, cfg) {
+    if (!cfg.enabled) return s;
+    
+    s = String(s);
+    
+    if (cfg.enhanced) {
+      s = s.replace(beforeFullWidth, '$1').replace(afterOpening, '$1');
+    }
+    
+    const style = (cfg.style || 'mainland').toLowerCase();
+    
+    if (style === 'mainland') {
+      s = s.replace(/『([^』]+)』/g, '\u2018$1\u2019').replace(/「([^「]+)」/g, '\u201c$1\u201d');
+      s = s.replace(new RegExp('(' + CJK_RANGE + ')\\s*"([^"]+)"\\s*(' + CJK_RANGE + ')', 'g'), '$1\u201c$2\u201d$3');
+      s = s.replace(new RegExp('(' + CJK_RANGE + ")\\s*'([^']+)'\\s*(" + CJK_RANGE + ')', 'g'), '$1\u2018$2\u2019$3');
+    } else if (style === 'tw-hk') {
+      s = s.replace(/"([^"]+)"/g, '\u300c$1\u300d').replace(/'([^']+)'/g, '\u300e$1\u300f');
+    } else if (style === 'tech') {
+      s = s.replace(/『([^』]+)』/g, '\u2018$1\u2019').replace(/「([^「]+)」/g, '\u201c$1\u201d');
+    }
+    
+    for (const r of (cfg.customPunc || [])) {
+      try {
+        s = s.replace(r.p, r.rep);
+      } catch (_) {}
+    }
+    
+    return s;
+  }
+}
+
+// --- AutoFormatter 类: 编辑层格式化 ---
+/**
+ * AutoFormatter 类负责编辑层格式化
+ * 直接修改文档内容,使用 Editor Command API
+ */
+class AutoFormatter {
+  constructor() {
+    this.dirtyBlocks = new Set(); // 需要格式化的块 ID
+    this.formattingBlocks = new Set(); // 正在格式化的块 ID（避免循环格式化）
+    this.currentBlockId = null;   // 当前光标所在的块 ID
+    this.previousBlockId = null;  // 上一个光标所在的块 ID
+    this.formatDebounceTimer = null;
+    this.config = null;
+    this.unsubscribe = null;
+  }
+
+  /**
+   * 启动编辑层格式化
+   * @param {Object} config - 配置对象
+   */
+  start(config) {
+    if (this.unsubscribe) {
+      console.warn(`[${currentPluginName}] AutoFormatter already started`);
+      return;
+    }
+
+    this.config = config;
+    this.dirtyBlocks.clear();
+    this.currentBlockId = null;
+    this.previousBlockId = null;
+
+    console.log(`[${currentPluginName}] AutoFormatter starting...`);
+    console.log(`[${currentPluginName}] orca.state structure:`, {
+      hasBlocks: !!orca.state.blocks,
+      blocksKeys: orca.state.blocks ? Object.keys(orca.state.blocks) : [],
+      hasCursor: !!orca.state.cursor,
+      cursor: orca.state.cursor,
+      allStateKeys: Object.keys(orca.state)
+    });
+
+    // 订阅状态变化
+    if (window.Valtio && typeof window.Valtio.subscribe === 'function') {
+      this.unsubscribe = window.Valtio.subscribe(orca.state, (ops) => {
+        this.handleStateChange(ops);
+      });
+      console.log(`[${currentPluginName}] AutoFormatter started and subscribed to state changes`);
+    } else {
+      console.error(`[${currentPluginName}] AutoFormatter: Valtio.subscribe not available`);
+    }
+  }
+
+  /**
+   * 停止编辑层格式化
+   */
+  stop() {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+
+    if (this.formatDebounceTimer) {
+      clearTimeout(this.formatDebounceTimer);
+      this.formatDebounceTimer = null;
+    }
+
+    this.dirtyBlocks.clear();
+    this.formattingBlocks.clear();
+    this.currentBlockId = null;
+    this.previousBlockId = null;
+    this.config = null;
+
+    console.log(`[${currentPluginName}] AutoFormatter stopped`);
+  }
+
+  /**
+   * 处理状态变化
+   */
+  handleStateChange(ops) {
+    console.log(`[${currentPluginName}] handleStateChange - Received ${ops.length} ops`);
+
+    ops.forEach(op => {
+      const [type, path, newValue, oldValue] = op;
+
+      // 输出完整的路径信息
+      const pathStr = path.join('.');
+      console.log(`[${currentPluginName}] State change: type=${type}, path=[${pathStr}], newValue=`, newValue, ', oldValue=', oldValue);
+
+      // 监听块变化 - OrcaNote 会设置整个块对象，而不是单独的 text 字段
+      if (type === 'set' && path.length === 2 && path[0] === 'blocks') {
+        const blockId = path[1];
+
+        // 检测新块创建（oldValue 为 undefined 或 null）
+        if (!oldValue && newValue) {
+          console.log(`[${currentPluginName}] ✓ New block created: ${blockId}`);
+
+          // 新块创建时，延迟格式化所有 dirty 块
+          // 延迟是为了等待 OrcaNote 完成所有内部更新
+          if (this.dirtyBlocks.size > 0) {
+            console.log(`[${currentPluginName}] New block created, scheduling formatting for ${this.dirtyBlocks.size} dirty block(s) after delay`);
+            const blocksToFormat = Array.from(this.dirtyBlocks);
+
+            // 延迟 150ms 后格式化，让 OrcaNote 完成所有更新
+            setTimeout(() => {
+              blocksToFormat.forEach(dirtyBlockId => {
+                if (dirtyBlockId !== blockId) { // 不格式化刚创建的空块
+                  this.scheduleFormat(dirtyBlockId);
+                }
+              });
+            }, 150);
+          }
+        }
+        // 检查现有块的 text 字段是否发生了变化
+        else if (newValue && oldValue && newValue.text !== oldValue.text) {
+          // 忽略正在格式化的块的状态变化（避免循环格式化）
+          if (this.formattingBlocks.has(blockId)) {
+            console.log(`[${currentPluginName}] Ignoring text change in formatting block: ${blockId}`);
+            return;
+          }
+
+          this.dirtyBlocks.add(blockId);
+          console.log(`[${currentPluginName}] ✓ Block marked as dirty: ${blockId} (text changed)`);
+
+          // 不立即格式化，只在新块创建时触发格式化
+          // 这样最稳健，不会干扰用户输入
+        }
+      }
+
+      // 监听光标/选择变化 - 从路径中提取块 ID
+      if (type === 'set') {
+        // 路径格式: panels.children.0.viewState.{blockId}.selection
+        if (pathStr.includes('viewState') && pathStr.includes('selection')) {
+          console.log(`[${currentPluginName}] ✓ Selection/Cursor state detected: [${pathStr}]`);
+
+          // 从路径中提取块 ID
+          // 路径格式: ['panels', 'children', '0', 'viewState', 'blockId', 'selection']
+          if (path.length >= 6 && path[3] === 'viewState' && path[5] === 'selection') {
+            const blockIdFromPath = path[4];
+            console.log(`[${currentPluginName}] Extracted block ID from path: ${blockIdFromPath}`);
+            this.handleCursorChangeWithBlockId(blockIdFromPath);
+          } else {
+            // 降级到 DOM 查找
+            console.log(`[${currentPluginName}] Could not extract block ID from path, using DOM lookup`);
+            this.handleCursorChange();
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * 处理光标变化（使用直接传入的 block ID）
+   */
+  handleCursorChangeWithBlockId(newBlockId) {
+    if (newBlockId && newBlockId !== this.currentBlockId) {
+      // 光标移动到了新块
+      this.previousBlockId = this.currentBlockId;
+      this.currentBlockId = newBlockId;
+
+      // 如果离开了上一个块,且该块需要格式化,则触发格式化
+      if (this.previousBlockId && this.dirtyBlocks.has(this.previousBlockId)) {
+        this.scheduleFormat(this.previousBlockId);
+      }
+
+      console.log(`[${currentPluginName}] ✓ Cursor moved: ${this.previousBlockId} -> ${this.currentBlockId}`);
+    } else {
+      console.log(`[${currentPluginName}] Cursor in same block: ${newBlockId} (no change)`);
+      // 不在同一个块内格式化，避免干扰用户打字
+    }
+  }
+
+  /**
+   * 处理光标变化（通过 DOM 查找）
+   */
+  handleCursorChange() {
+    console.log(`[${currentPluginName}] handleCursorChange called`);
+    console.log(`[${currentPluginName}] currentBlockId:`, this.currentBlockId, 'previousBlockId:', this.previousBlockId);
+
+    const newBlockId = this.getCurrentBlockId();
+    console.log(`[${currentPluginName}] newBlockId from getCurrentBlockId():`, newBlockId);
+
+    if (newBlockId && newBlockId !== this.currentBlockId) {
+      // 光标移动到了新块
+      this.previousBlockId = this.currentBlockId;
+      this.currentBlockId = newBlockId;
+
+      // 如果离开了上一个块,且该块需要格式化,则触发格式化
+      if (this.previousBlockId && this.dirtyBlocks.has(this.previousBlockId)) {
+        this.scheduleFormat(this.previousBlockId);
+      }
+
+      console.log(`[${currentPluginName}] ✓ Cursor moved: ${this.previousBlockId} -> ${this.currentBlockId}`);
+    } else {
+      console.log(`[${currentPluginName}] Cursor in same block: ${newBlockId} (no change)`);
+      // 不在同一个块内格式化，避免干扰用户打字
+    }
+  }
+
+  /**
+   * 获取当前光标所在的块 ID
+   */
+  getCurrentBlockId() {
+    try {
+      console.log(`[${currentPluginName}] getCurrentBlockId - Starting...`);
+
+      const sel = window.getSelection && window.getSelection();
+      if (sel && sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        const node = range.commonAncestorContainer;
+
+        console.log(`[${currentPluginName}] getCurrentBlockId - Node:`, node, 'NodeType:', node.nodeType);
+
+        // 查找最近的块元素
+        let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        console.log(`[${currentPluginName}] getCurrentBlockId - Initial element:`, el);
+
+        while (el && !this.isBlockElement(el)) {
+          el = el.parentElement;
+        }
+
+        console.log(`[${currentPluginName}] getCurrentBlockId - Found element after search:`, el);
+
+        if (el) {
+          console.log(`[${currentPluginName}] getCurrentBlockId - Element is not null, checking attributes...`);
+
+          // 方法1: 尝试从 data-block-id 属性获取
+          const blockId = el.getAttribute('data-block-id');
+          console.log(`[${currentPluginName}] getCurrentBlockId - data-block-id:`, blockId);
+          if (blockId) {
+            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via data-block-id:`, blockId);
+            return blockId;
+          }
+
+          // 方法2: 尝试从 data-id 属性获取
+          const id = el.getAttribute('data-id');
+          console.log(`[${currentPluginName}] getCurrentBlockId - data-id:`, id);
+          if (id) {
+            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via data-id:`, id);
+            return id;
+          }
+
+          // 方法3: 尝试从 id 属性获取(如果格式为 block-xxx)
+          const elId = el.id;
+          console.log(`[${currentPluginName}] getCurrentBlockId - id:`, elId);
+          if (elId && elId.startsWith('block-')) {
+            const result = elId.replace('block-', '');
+            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via id:`, result);
+            return result;
+          }
+
+          // 方法4: 尝试从 orca-state 属性获取
+          const orcaState = el.getAttribute('orca-state');
+          console.log(`[${currentPluginName}] getCurrentBlockId - orca-state:`, orcaState);
+          if (orcaState) {
+            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via orca-state:`, orcaState);
+            return orcaState;
+          }
+
+          // 方法5: 尝试从 closest 查找带有 data-block-id 的父元素
+          const parentWithBlockId = el.closest('[data-block-id]');
+          console.log(`[${currentPluginName}] getCurrentBlockId - parent with data-block-id:`, parentWithBlockId);
+          if (parentWithBlockId) {
+            const parentBlockId = parentWithBlockId.getAttribute('data-block-id');
+            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via parent data-block-id:`, parentBlockId);
+            return parentBlockId;
+          }
+
+          // 方法6: 尝试从 closest 查找带有 orca-state 的父元素
+          const parentWithOrcaState = el.closest('[orca-state]');
+          console.log(`[${currentPluginName}] getCurrentBlockId - parent with orca-state:`, parentWithOrcaState);
+          if (parentWithOrcaState) {
+            const parentOrcaState = parentWithOrcaState.getAttribute('orca-state');
+            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via parent orca-state:`, parentOrcaState);
+            return parentOrcaState;
+          }
+
+          console.log(`[${currentPluginName}] getCurrentBlockId - ✗ No block ID found on element:`, el);
+          console.log(`[${currentPluginName}] getCurrentBlockId - Element attributes:`, {
+            'data-block-id': el.getAttribute('data-block-id'),
+            'data-id': el.getAttribute('data-id'),
+            'id': el.id,
+            'orca-state': el.getAttribute('orca-state'),
+            'class': el.className
+          });
+        } else {
+          console.log(`[${currentPluginName}] getCurrentBlockId - Element is null!`);
+        }
+      } else {
+        console.log(`[${currentPluginName}] getCurrentBlockId - No selection or range`);
+      }
+    } catch (error) {
+      console.error(`[${currentPluginName}] getCurrentBlockId error:`, error);
+    }
+
+    console.log(`[${currentPluginName}] getCurrentBlockId - Returning null`);
+    return null;
+  }
+
+  /**
+   * 判断是否为块元素
+   */
+  isBlockElement(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    return ['P', 'DIV', 'LI', 'UL', 'OL', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'SECTION', 'ARTICLE'].includes(tag);
+  }
+
+  /**
+   * 调度格式化操作
+   */
+  scheduleFormat(blockId) {
+    if (this.formatDebounceTimer) {
+      clearTimeout(this.formatDebounceTimer);
+    }
+
+    this.formatDebounceTimer = setTimeout(() => {
+      this.formatBlock(blockId);
+      this.formatDebounceTimer = null;
+    }, 0); // 立即执行，不防抖，避免 OrcaNote 覆盖
+  }
+
+  /**
+   * 格式化块
+   */
+  async formatBlock(blockId) {
+    if (!this.dirtyBlocks.has(blockId)) {
+      console.log(`[${currentPluginName}] Block already formatted: ${blockId}`);
+      return;
+    }
+
+    try {
+      const block = orca.state.blocks[blockId];
+      if (!block) {
+        console.warn(`[${currentPluginName}] Block not found: ${blockId}`);
+        this.dirtyBlocks.delete(blockId);
+        return;
+      }
+
+      // 应用格式化规则
+      const originalText = block.text || '';
+
+      // 移除所有尾部换行符（OrcaNote 会自动管理换行）
+      const contentWithoutTrailing = originalText.replace(/\n*$/, '');
+
+      console.log(`[${currentPluginName}] Original text:`, originalText);
+      console.log(`[${currentPluginName}] Content without trailing newlines:`, contentWithoutTrailing);
+
+      // 如果内容为空，跳过格式化
+      if (!contentWithoutTrailing.trim()) {
+        console.log(`[${currentPluginName}] Skipping empty block`);
+        this.dirtyBlocks.delete(blockId);
+        return;
+      }
+
+      // 只格式化有意义的内容部分
+      let formattedContent = this.applySpacing(contentWithoutTrailing, this.config);
+      formattedContent = this.applyPunctuation(formattedContent, {
+        enabled: this.config.puncEnabled,
+        enhanced: this.config.puncEnhanced,
+        style: this.config.puncStyle,
+        customPunc: this.config.customPunc
+      });
+
+      console.log(`[${currentPluginName}] Formatted content:`, formattedContent);
+
+      // 如果文本有变化,使用 Editor Command 更新
+      // 注意：不要添加换行符，OrcaNote 会自动管理
+      if (formattedContent !== contentWithoutTrailing) {
+        await this.updateBlockText(blockId, formattedContent, contentWithoutTrailing);
+      }
+
+      // 清除 dirty 标记
+      this.dirtyBlocks.delete(blockId);
+
+      console.log(`[${currentPluginName}] Block formatted: ${blockId}`);
+    } catch (error) {
+      console.error(`[${currentPluginName}] Format block error:`, error);
+    }
+  }
+
+  /**
+   * 更新块文本
+   */
+  async updateBlockText(blockId, newText, oldText) {
+    try {
+      console.log(`[${currentPluginName}] updateBlockText called for block ${blockId}`);
+      console.log(`[${currentPluginName}] oldText:`, oldText);
+      console.log(`[${currentPluginName}] newText:`, newText);
+
+      // 详细检查块是否存在
+      console.log(`[${currentPluginName}] Checking if block exists...`);
+      console.log(`[${currentPluginName}] orca.state.blocks exists:`, !!orca.state.blocks);
+      console.log(`[${currentPluginName}] blockId type:`, typeof blockId, `value:`, blockId);
+      console.log(`[${currentPluginName}] block exists in state:`, !!orca.state.blocks?.[blockId]);
+      console.log(`[${currentPluginName}] Available block IDs:`, orca.state.blocks ? Object.keys(orca.state.blocks).slice(0, 10) : 'none');
+
+      // 检查块是否存在
+      if (!orca.state.blocks || !orca.state.blocks[blockId]) {
+        console.warn(`[${currentPluginName}] ⚠️ Block not found: ${blockId}`);
+        console.warn(`[${currentPluginName}] This might be because the block was deleted or the ID is incorrect`);
+        return;
+      }
+
+      const block = orca.state.blocks[blockId];
+      console.log(`[${currentPluginName}] ✓ Block found:`, block);
+
+      // 标记为正在格式化（避免循环格式化）
+      this.formattingBlocks.add(blockId);
+      console.log(`[${currentPluginName}] Marked block ${blockId} as formatting`);
+
+      // 将文本转换为 content fragments 格式
+      const newContent = [{ t: "t", v: newText }];
+
+      console.log(`[${currentPluginName}] Calling core.editor.setBlocksContent`);
+      console.log(`[${currentPluginName}] New content:`, newContent);
+
+      // 使用 core.editor.setBlocksContent 命令更新块内容
+      // 这会正确更新光标位置和 UI，但会记录到撤销栈
+      const updates = [
+        {
+          id: parseInt(blockId),  // 确保 ID 是数字类型
+          content: newContent
+        }
+      ];
+
+      console.log(`[${currentPluginName}] Updates to apply:`, updates);
+      console.log(`[${currentPluginName}] About to call orca.commands.invokeEditorCommand...`);
+
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setBlocksContent",
+        null,           // cursor 参数
+        updates,        // 要更新的块数组
+        false           // setBackCursor: 不恢复光标位置
+      );
+
+      console.log(`[${currentPluginName}] ✓ Block content updated via setBlocksContent`);
+
+      // 延迟清除格式化标记
+      setTimeout(() => {
+        this.formattingBlocks.delete(blockId);
+        console.log(`[${currentPluginName}] Removed formatting mark from block ${blockId}`);
+      }, 500);
+
+    } catch (error) {
+      console.error(`[${currentPluginName}] ❌ Update block text error:`, error);
+      console.error(`[${currentPluginName}] Error details:`, error.stack);
+      console.error(`[${currentPluginName}] Error name:`, error.name);
+      console.error(`[${currentPluginName}] Error message:`, error.message);
+      // 确保清除格式化标记
+      this.formattingBlocks.delete(blockId);
+      throw error;
+    }
+  }
+
+  /**
+   * 应用空格规则
+   */
+  applySpacing(s, cfg) {
+    s = String(s).replace(reCjkThenLat, '$1 $2').replace(reLatThenCjk, '$1 $2');
+    
+    if (cfg.enhanced) {
+      const uRe = cfg.unitRe || buildUnitRegex('');
+      const exRe = cfg.exceptionRe || defaultExceptionRe;
+      s = s.replace(uRe, '$1 ').replace(exRe, '$1$2');
+    }
+    
+    for (const r of (cfg.customSpacing || [])) {
+      try {
+        s = s.replace(r.p, r.rep);
+      } catch (_) {}
+    }
+    
+    return s;
+  }
+
+  /**
+   * 应用标点规则
+   */
+  applyPunctuation(s, cfg) {
+    if (!cfg.enabled) return s;
+    
+    s = String(s);
+    
+    if (cfg.enhanced) {
+      s = s.replace(beforeFullWidth, '$1').replace(afterOpening, '$1');
+    }
+    
+    const style = (cfg.style || 'mainland').toLowerCase();
+    
+    if (style === 'mainland') {
+      s = s.replace(/『([^』]+)』/g, '\u2018$1\u2019').replace(/「([^「]+)」/g, '\u201c$1\u201d');
+      s = s.replace(new RegExp('(' + CJK_RANGE + ')\\s*"([^"]+)"\\s*(' + CJK_RANGE + ')', 'g'), '$1\u201c$2\u201d$3');
+      s = s.replace(new RegExp('(' + CJK_RANGE + ")\\s*'([^']+)'\\s*(" + CJK_RANGE + ')', 'g'), '$1\u2018$2\u2019$3');
+    } else if (style === 'tw-hk') {
+      s = s.replace(/"([^"]+)"/g, '\u300c$1\u300d').replace(/'([^']+)'/g, '\u300e$1\u300f');
+    } else if (style === 'tech') {
+      s = s.replace(/『([^』]+)』/g, '\u2018$1\u2019').replace(/「([^「]+)」/g, '\u201c$1\u201d');
+    }
+    
+    for (const r of (cfg.customPunc || [])) {
+      try {
+        s = s.replace(r.p, r.rep);
+      } catch (_) {}
+    }
+    
+    return s;
+  }
 }

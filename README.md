@@ -1,72 +1,177 @@
-# OrcaNote 高级排版增强插件 (OrcaNote Typography Enhancer)
+# OrcaNote 中文排版优化插件 (OrcaNote Typography Enhancer)
 
-本插件为 [OrcaNote](https://orca-studio.com) (虎鲸笔记) 提供符合中文写作规范的高级排版增强能力（基于[中文排版指南](https://github.com/aaranxu/chinese-copywriting-guidelines)），覆盖自动空格、单位空格、标点与引号规范、数字对齐与连字等显示层优化。同时保留全局基础字号与行高控制，避免与 OrcaNote 内置字体选择冲突。
+本插件为 [OrcaNote](https://orca-studio.com) (虎鲸笔记) 提供符合[中文排版指南](https://github.com/aaranxu/chinese-copywriting-guidelines)的智能排版优化能力，支持**实时预览**和**自动格式化**两种模式，覆盖自动空格、标点规范、引号转换等多种排版优化功能。
 
-## ✨ 主要功能
+## ✨ 核心特性
 
-* 自动空格：中文与英文/数字之间自动加空格；支持单位空格增强与例外处理（°、%）。
-* 标点与引号规范化：移除中文全角标点前后多余空格；支持引号风格转换（`mainland`／`tw-hk`／`tech`）。
-* 自定义规则：提供 JSON 规则扩展空格/标点行为，按序执行到显示层，不改动原文。
-* 数字对齐与连字：启用 `font-variant-numeric: tabular-nums` 提升表格数字对齐；可配置正文/代码连字。
-* 作用范围与性能：通过选择器限定变换作用范围（默认 `.markdown-body`），支持防抖（默认 5000ms）与“输入暂停”策略（停止输入后再处理）。
-* 硬格式化：提供命令将选区或单块内容按规则规范化并复制/写回；多块选区复制到剪贴板，单块选区就地写回；不受自动处理开关影响。
-* 基础视觉控制：保留 `--orca-fontsize-base` 全局基础字号与 `--orca-lineheight-md` 全局行高。
-* 严格跳过代码区：自动跳过 `code/pre/kbd/samp`、高亮容器（`hljs` 等）、编辑器容器（`CodeMirror/Monaco` 等）、链接与可编辑区域。
+### 📝 双模式排版
 
-## 🚀 安装与使用
+- **预览模式 (Preview)**：仅视觉显示优化，不修改原文，适合浏览和展示
+- **自动模式 (Auto)**：按 Enter 时自动应用格式化，支持撤销，适合写作过程
 
-1. 从 Releases 下载 ZIP（ https://github.com/lioyeah/orca-cn-typography/releases ），解压得到插件目录（例如 `orca-cn-typography`），放入 OrcaNote 插件目录后启用。
-2. 在插件设置中按需配置上述选项；变更通常会实时生效。
-3. 若未生效，请尝试重启 OrcaNote 或重新启用插件。
+### 🔤 智能排版规则
 
-## ⚙️ 设置项一览
+- **中英文自动空格**：在中文与英文/数字之间自动添加空格
+  - 示例：`测试test测试` → `测试 test 测试`
+  - 示例：`版本1.0发布` → `版本 1.0 发布`
 
-- `baseFontSize`：全局基础字号
-- `globalLineHeight`：全局行高
-- `autoProcessing`：自动处理总开关（实时应用空格与标点；默认开启）
-- `enableAutoSpacing`：智能中英数字间距
-- `enableEnhancedSpacing`：数字-单位空格增强与例外处理
-- `customSpacingRules`：自定义空格规则（JSON）
-- `enablePunctuationPreview`：标点/引号规范预览
-- `enablePunctuationEnhanced`：增强标点规则
-- `punctuationStyle`：引号风格（`mainland` | `tw-hk` | `tech`）
-- `customPunctuationRules`：自定义标点规则（JSON）
-- `bodyLigatures`：正文连字
-- `codeLigatures`：代码连字
-- `numericTabular`：表格数字对齐
-- `transformRootSelector`：变换作用范围选择器（默认 `.markdown-body`）
-- `transformDebounceMs`：变换防抖毫秒（默认 `5000`）
-- `unitWhitelist`：单位白名单（CSV，默认含常见单位）
-- `pauseOnTyping`：输入时暂停实时处理（默认开启）
-- `typingIdleMs`：输入停止后延迟处理毫秒（默认 `3000`）
-- `hardFormatToClipboard`：一次性硬格式化到剪贴板（仅当前页面正文）
-- `debugLogs`：调试日志
+- **增强空格规则**：数字与单位间智能加空格
+  - 示例：`10GB` → `10 GB`、`100MHz` → `100 MHz`
+  - 特殊符号保留：`233°`、`15%` 不加空格
 
-注：为避免与 OrcaNote 内置字体选择冲突，本插件已移除字体族选择项。
+- **标点符号规范化**：
+  - 去除中文标点前后的多余空格
+  - 统一引号样式（大陆/港台/技术文档）
+  - 支持自定义标点转换规则
+
+### 🎨 视觉优化
+
+- **字体连字**：正文/代码区域可选连字支持
+- **表格数字对齐**：等宽数字显示，提升数据可读性
+- **全局字号与行高**：可调整基础字体大小和行高
+
+### ⚡ 性能优化
+
+- **智能防抖**：避免频繁触发，减少性能开销
+- **输入暂停**：打字时暂停处理，不干扰输入
+- **精确作用范围**：通过 CSS 选择器限定处理范围
+
+## 🚀 快速开始
+
+### 安装
+
+1. 从 [Releases](https://github.com/lioyeah/orca-cn-typography/releases) 下载最新版本 ZIP
+2. 解压后将插件文件夹放入 OrcaNote 插件目录
+3. 在 OrcaNote 中启用插件
+
+### 基础使用
+
+1. **选择排版模式**：
+   - 在插件设置中选择 `排版模式`
+   - `preview`：仅视觉预览（默认）
+   - `auto`：自动格式化（推荐）
+
+2. **开启功能**：
+   - ✅ 自动处理总开关
+   - ✅ 中英文自动空格
+   - ✅ 标点符号规范化
+
+3. **开始写作**：
+   - 在 auto 模式下，按 Enter 换行时会自动应用格式化
+   - 使用 Ctrl+Z 可以撤销格式化
+
+## ⚙️ 配置说明
+
+### 基础设置
+
+| 设置项 | 说明 | 默认值 |
+|--------|------|--------|
+| 📝 排版模式 | 选择 preview（预览）或 auto（自动） | auto |
+| ✨ 自动处理总开关 | 开启后实时应用排版规则 | 开启 |
+| 🔤 中英文自动空格 | 中英文数字之间自动加空格 | 开启 |
+| 🔣 标点符号规范化 | 规范化标点符号和引号 | 开启 |
+
+### 高级设置
+
+| 设置项 | 说明 | 默认值 |
+|--------|------|--------|
+| 增强空格规则 | 数字与单位间加空格 | 开启 |
+| 引号风格 | mainland / tw-hk / tech | mainland |
+| 🔗 正文连字 | 西文连字优化 | 开启 |
+| 💻 代码连字 | 代码块连字 | 关闭 |
+| 📊 表格数字对齐 | 等宽数字显示 | 开启 |
+| ⌨️ 输入时暂停处理 | 打字时不应用格式化 | 开启 |
+
+### 自定义规则
+
+支持通过 JSON 格式自定义空格和标点规则：
+
+```json
+[
+  {
+    "pattern": "(?<=[0-9])GB\\b",
+    "replacement": " GB"
+  }
+]
+```
 
 ## 🔧 命令
 
-- `orca-cn-typography.hardFormatClipboard`：硬格式化到剪贴板（支持选中文本、多块选区；在单块选区也可使用）
-- `orca-cn-typography.hardFormatWriteback`：硬格式化并写回选区（单块选区就地写回；多块选区自动复制到剪贴板以避免合并与不可撤销）
+插件提供以下命令（可通过命令面板调用）：
 
-说明：
-- 命令始终应用当前配置与自定义 JSON 规则，即使关闭了 `autoProcessing`。
-- 作用范围限定在正文容器（优先 `.markdown-body`），避免边栏/设置页等被处理。
+- `orca-cn-typography.hardFormatClipboard`：将格式化后的文本复制到剪贴板
+- `orca-cn-typography.hardFormatWriteback`：将格式化后的文本写回文档
 
-## 🧪 测试与验证
+## 💡 使用技巧
 
-- 仓库内提供 `typography-test.md`，包含场景化示例与判定标准，便于他人复核。
-- 新增“多级列表文本规范”场景，验证嵌套列表与有序列表在规范化后层级与缩进不被破坏。
-- 代码区不会被显示层变换影响（已覆盖常见容器与编辑器类名）。
+### Auto 模式最佳实践
 
-## 🤝 反馈与贡献 (Feedback & Contributing)
+1. **按 Enter 触发格式化**：
+   - 输入完一行后按 Enter，自动应用格式化
+   - 格式化会记录到撤销栈，Ctrl+Z 可恢复
 
-如果你在使用过程中遇到任何问题、有功能建议，或者发现了 Bug，欢迎通过本仓库的 [**Issues**](https://github.com/lioyeah/orca-cn-typography/issues) 页面提交。
+2. **避免干扰输入**：
+   - 插件会在打字时暂停处理
+   - 只在换行时应用格式化，不影响连续输入
 
-如果你有兴趣为本项目贡献代码，也欢迎提交 Pull Request。
+3. **撤销操作**：
+   - 第一次 Ctrl+Z：撤销格式化
+   - 第二次 Ctrl+Z：撤销输入
 
-## 📄 许可证 (License)
+### Preview 模式适用场景
 
-本项目采用 [MIT 许可证](LICENSE) 。
+- 浏览已有文档时启用预览优化
+- 不希望修改原文，仅改善视觉效果
+- 演示或分享时临时启用
+
+## 🧪 测试用例
+
+在 OrcaNote 中输入以下内容，验证格式化效果：
+
+| 输入 | 预期输出 (Auto 模式) |
+|------|---------------------|
+| `测试test测试` | `测试 test 测试` |
+| `版本1.0发布` | `版本 1.0 发布` |
+| `这是1个测试` | `这是 1 个测试` |
+| `容量100GB` | `容量 100 GB` |
+
+## 📋 常见问题
+
+### Q: 格式化后如何撤销？
+A: 使用 Ctrl+Z 可以撤销格式化操作。
+
+### Q: 如何关闭自动格式化？
+A: 在设置中关闭"自动处理总开关"，或切换到 Preview 模式。
+
+### Q: 格式化会影响代码块吗？
+A: 不会。插件会自动跳过代码块、链接等特殊区域。
+
+### Q: 可以自定义排版规则吗？
+A: 可以。通过"自定义空格规则"和"自定义标点规则"使用 JSON 格式定义。
+
+## 🤝 反馈与贡献
+
+- **问题反馈**：[Issues](https://github.com/lioyeah/orca-cn-typography/issues)
+- **功能建议**：欢迎通过 Issues 提出
+- **代码贡献**：欢迎提交 Pull Request
+
+## 🎉 更新日志
+
+### v2.0.0 (Latest)
+- ✨ 新增 Auto 模式：支持自动格式化（可撤销）
+- 🎨 优化设置界面：更直观的选项说明和 Emoji 图标
+- 🐛 修复：光标位置异常、格式化循环等问题
+- ⚡ 性能优化：改进状态监听和格式化时机
+
+### v1.x
+- ✨ Preview 模式：视觉预览排版效果
+- 🔤 中英文自动空格
+- 🔣 标点符号规范化
+
+## 📄 许可证
+
+[MIT License](LICENSE)
 
 ---
+
+**Powered by** [OrcaNote](https://orca-studio.com) | **Made with** ❤️ **by** lioyeah

@@ -1,6 +1,5 @@
 // orca-cn-typography/dist/index.js
-// Version: 1.1.0 (添加了全局行高，并进行了代码结构优化和注释)
-// Description: OrcaNote 插件，用于自定义字体族、全局基础字体大小和全局行高。
+// OrcaNote 中文排版插件：字体大小、行高、中英文空格、标点规范化、Preview/Auto 双模式格式化
 
 // --- 全局变量 ---
 let currentPluginName = "orca-cn-typography";
@@ -53,19 +52,19 @@ const settingsSchema = {
     description: `设置全局行高（如 1.6、1.8）。数值越大，行间距越大。`
   },
   formattingMode: {
-    label: "📝 排版模式",
+    label: "排版模式",
     type: "string",
     defaultValue: "auto",
     description: "• preview: 预览模式 - 仅视觉显示优化，不修改原文\n• auto: 自动模式 - 按 Enter 时自动应用格式化（可撤销）"
   },
   autoProcessing: {
-    label: "✨ 自动处理总开关",
+    label: "自动处理总开关",
     type: "boolean",
     defaultValue: true,
     description: "开启后实时应用排版规则。关闭则只能通过命令手动格式化。"
   },
   enableAutoSpacing: {
-    label: "🔤 中英文自动空格",
+    label: "中英文自动空格",
     type: "boolean",
     defaultValue: true,
     description: "在中文与英文/数字之间自动添加空格。例如：「测试test」→「测试 test」"
@@ -79,11 +78,11 @@ const settingsSchema = {
   customSpacingRules: {
     label: "   ↳ 自定义空格规则 (高级)",
     type: "string",
-    defaultValue: "",
-    description: "JSON 格式自定义规则。示例：[{\"pattern\":\"(?<=[0-9])GB\\\\b\",\"replacement\":\" GB\"}]"
+    defaultValue: '[{"pattern":"([\u4e00-\u9fff])[(]","replacement":"$1 ("},{"pattern":"[)]([\u4e00-\u9fff])","replacement":") $1"},{"pattern":"([\u4e00-\u9fff])\\\\[","replacement":"$1 ["},{"pattern":"\\\\]([\u4e00-\u9fff])","replacement":"] $1"}]',
+    description: "JSON 格式补充空格规则（可删除或修改）。默认：中文与半角括号间加空格"
   },
   enablePunctuationPreview: {
-    label: "🔣 标点符号规范化",
+    label: "标点符号规范化",
     type: "boolean",
     defaultValue: true,
     description: "规范化标点符号：去除多余空格、统一引号样式"
@@ -98,46 +97,46 @@ const settingsSchema = {
     label: "   ↳ 引号风格",
     type: "string",
     defaultValue: "mainland",
-    description: "• mainland: 中文用""和''（大陆）\n• tw-hk: 中文用「」和『』（港台）\n• tech: 中英文混排优化"
+    description: '• mainland: 中文用\u201c\u201d和\u2018\u2019（大陆）\n• tw-hk: 中文用「」和『』（港台）\n• tech: 中英文混排优化'
   },
   customPunctuationRules: {
     label: "   ↳ 自定义标点规则 (高级)",
     type: "string",
-    defaultValue: "",
-    description: "JSON 格式自定义规则。示例：[{\"pattern\":\""([^"]+)"\",\"replacement\":\"『$1』\"}]"
+    defaultValue: '[{"pattern":"[.]{3,}","replacement":"……"},{"pattern":"[-]{2,}","replacement":"——"},{"pattern":"([\u4e00-\u9fff])!([\u4e00-\u9fff])","replacement":"$1！$2"},{"pattern":"([\u4e00-\u9fff])[?]([\u4e00-\u9fff])","replacement":"$1？$2"},{"pattern":"([\u4e00-\u9fff]),([\u4e00-\u9fff])","replacement":"$1，$2"},{"pattern":"([\u4e00-\u9fff])[.]([\u4e00-\u9fff])","replacement":"$1。$2"},{"pattern":"([\u4e00-\u9fff]);([\u4e00-\u9fff])","replacement":"$1；$2"},{"pattern":"([\u4e00-\u9fff]):([\u4e00-\u9fff])","replacement":"$1：$2"}]',
+    description: '自定义标点补充规则（可删除或修改）。默认：省略号/破折号规范化、中文间半角标点转全角'
   },
   bodyLigatures: {
-    label: "🔗 正文连字",
+    label: "正文连字",
     type: "boolean",
     defaultValue: true,
     description: "在正文中启用字体连字，优化西文排版（如 fi、fl 连字）"
   },
   codeLigatures: {
-    label: "💻 代码连字",
+    label: "代码连字",
     type: "boolean",
     defaultValue: false,
     description: "在代码块中启用连字。默认关闭以避免符号混淆（如 != 和 ≠）"
   },
   numericTabular: {
-    label: "📊 表格数字对齐",
+    label: "表格数字对齐",
     type: "boolean",
     defaultValue: true,
     description: "使用等宽数字，在表格和数据对齐场景更清晰"
   },
   transformRootSelector: {
-    label: "⚙️ 作用范围选择器 (高级)",
+    label: "作用范围选择器 (高级)",
     type: "string",
     defaultValue: ".markdown-body",
     description: "CSS 选择器，限定排版规则的作用范围。默认值适用于大多数情况"
   },
   transformDebounceMs: {
-    label: "⚙️ 变换防抖延迟 (高级)",
+    label: "变换防抖延迟 (高级)",
     type: "string",
     defaultValue: "5000",
     description: "文档变化后延迟多少毫秒再应用排版（单位：毫秒）。数值越大性能越好但响应越慢"
   },
   pauseOnTyping: {
-    label: "⌨️ 输入时暂停处理",
+    label: "输入时暂停处理",
     type: "boolean",
     defaultValue: true,
     description: "打字时暂停排版处理，停止输入后再应用，避免干扰输入"
@@ -149,19 +148,19 @@ const settingsSchema = {
     description: "停止输入后延迟多少毫秒再应用排版（单位：毫秒）"
   },
   unitWhitelist: {
-    label: "⚙️ 单位白名单 (高级)",
+    label: "单位白名单 (高级)",
     type: "string",
     defaultValue: "GB,Gbps,TB,MB,KB,px,ms,s,GHz,MHz,B,KiB,MiB,GiB,TiB,ns,us,µs,min,h",
     description: "逗号分隔的单位列表，用于数字与单位间自动加空格"
   },
   debugLogs: {
-    label: "🐛 调试日志",
+    label: "调试日志",
     type: "boolean",
     defaultValue: false,
     description: "启用后在浏览器控制台显示详细的调试信息。仅供开发调试使用"
   },
   hardFormatToClipboard: {
-    label: "📋 一次性格式化到剪贴板",
+    label: "一次性格式化到剪贴板",
     type: "boolean",
     defaultValue: false,
     description: "将当前文档的格式化结果复制到剪贴板（一次性操作）"
@@ -199,10 +198,10 @@ function getSettingValue(settingKey, savedSettings) {
 function applyOrRemoveCssVar(variableName, value) {
   if (value && typeof value === 'string' && value.trim() !== '') {
     document.documentElement.style.setProperty(variableName, value, 'important');
-    console.log(`[${currentPluginName}] applyCustomStyles TRACE - Applied ${variableName}: ${value}`);
+    console.log(`[${currentPluginName}] Applied ${variableName}: ${value}`);
   } else {
     document.documentElement.style.removeProperty(variableName);
-    console.log(`[${currentPluginName}] applyCustomStyles TRACE - Removed ${variableName} (value was effectively empty).`);
+    console.log(`[${currentPluginName}] Removed ${variableName}`);
   }
 }
 
@@ -220,12 +219,6 @@ function updateTypographyStyles({ bodyLigatures, codeLigatures, numericTabular }
   el.textContent = `body{font-variant-ligatures:${bodyLiga}}code,pre,kbd,samp,.code,.code-block{font-variant-ligatures:${codeLiga}}body,.markdown-body,main,article{font-variant-numeric:${numeric}}`;
 }
 
-let textTransformObserver = null;
-let textTransformDebounceTimer = null;
-let textTransformRoot = null;
-let textTransformTypingHandlers = [];
-let isUserTyping = false;
-let typingIdleTimer = null;
 let hardFormatOnceUsed = false;
 
 // PreviewFormatter 实例
@@ -233,12 +226,26 @@ let previewFormatter = null;
 
 // AutoFormatter 实例
 let autoFormatter = null;
-function compileRules(json){
+function compileRules(json, label){
+  const raw = String(json||'').trim();
+  if(!raw) return [];
   try{
-    const arr = JSON.parse(String(json||''));
-    if(!Array.isArray(arr)) return [];
-    return arr.map(r=>({p:new RegExp(r.pattern,'g'),rep:String(r.replacement||'')})).filter(x=>x.p);
-  }catch(_){ return []; }
+    const arr = JSON.parse(raw);
+    if(!Array.isArray(arr)){
+      orca.notify('warn', `[${currentPluginName}] ${label||'自定义规则'}：JSON 格式错误，需要数组格式 [...]`);
+      return [];
+    }
+    return arr.map(r=>{
+      try{ return {p:new RegExp(r.pattern,'g'),rep:String(r.replacement||'')}; }
+      catch(e){
+        orca.notify('warn', `[${currentPluginName}] ${label||'自定义规则'}：正则表达式 "${r.pattern}" 无效 - ${e.message}`);
+        return null;
+      }
+    }).filter(Boolean);
+  }catch(e){
+    orca.notify('warn', `[${currentPluginName}] ${label||'自定义规则'}：JSON 语法错误 - ${e.message}`);
+    return [];
+  }
 }
 const CJK_RANGE='[\\u2E80-\\u2EFF\\u2F00-\\u2FDF\\u3040-\\u30FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF]';
 const reCjkThenLat=new RegExp('('+CJK_RANGE+')([A-Za-z0-9])','g');
@@ -289,6 +296,35 @@ function applyPunctuation(s,cfg){
   for(const r of (cfg.customPunc||[])){ try{ s=s.replace(r.p,r.rep);}catch(_){}}
   return s;
 }
+/**
+ * 对 ContentFragment[] 应用格式化规则，保留每个 fragment 的格式信息（bold/italic 等）
+ * @param {ContentFragment[]} fragments - 块的 content 数组
+ * @param {object} cfg - 格式化配置
+ * @returns {ContentFragment[]} 格式化后的 content 数组
+ */
+function formatContentFragments(fragments, cfg) {
+  if (!fragments || !Array.isArray(fragments)) return fragments;
+  let changed = false;
+  const result = fragments.map(frag => {
+    // 只处理文本类型的 fragment，跳过引用、代码等
+    if (frag.t !== 't' || typeof frag.v !== 'string') return frag;
+    let s = frag.v;
+    s = applySpacing(s, cfg);
+    s = applyPunctuation(s, {
+      enabled: cfg.puncEnabled,
+      enhanced: cfg.puncEnhanced,
+      style: cfg.puncStyle,
+      customPunc: cfg.customPunc
+    });
+    if (s !== frag.v) {
+      changed = true;
+      return { ...frag, v: s };
+    }
+    return frag;
+  });
+  return changed ? result : null; // null 表示无变化
+}
+
 function processTree(root,cfg){
   try{
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:(n)=>{
@@ -406,91 +442,95 @@ function getSelectionHolder(root){
   }
   return holder;
 }
-function replaceSelectionWithText(text){
-  try{
-    if(document.queryCommandSupported && document.queryCommandSupported('insertText')){
-      const ok=document.execCommand('insertText', false, text);
-      if(ok) return true;
-    }
-  }catch(_){}
-  const sel=window.getSelection && window.getSelection();
-  if(!sel || !sel.rangeCount) return false;
-  const range=sel.getRangeAt(0);
-  range.deleteContents();
-  range.insertNode(document.createTextNode(text));
-  sel.removeAllRanges();
-  const r=document.createRange();
-  r.selectNodeContents(range.commonAncestorContainer);
-  sel.addRange(r);
-  return true;
-}
-async function hardFormatSelectionWriteback(cfg){
-  const root=getEffectiveRootForSelection(cfg.rootSelector);
-  const holder=getSelectionHolder(root);
-  processTree(holder,{...cfg, detached:true});
-  const text=collectFormattedText(holder);
-  const blocksCount = holder.querySelectorAll('p, div, li, h1, h2, h3, h4, h5, h6, blockquote, section').length;
-  if(blocksCount>1){
-    await copyText(text);
-    orca.notify('warn', `[${currentPluginName}] 检测到多块选区，为避免合并块与不可撤销，已复制到剪贴板，请使用粘贴完成写回。`);
-    return;
+/**
+ * 从 DOM 节点向上查找 Orca 块 ID
+ */
+function findBlockIdFromNode(node) {
+  let el = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  while (el) {
+    const bid = el.getAttribute('data-block-id') || el.getAttribute('data-id');
+    if (bid) return bid;
+    if (el.id?.startsWith('block-')) return el.id.replace('block-', '');
+    el = el.parentElement;
   }
-  const ok=replaceSelectionWithText(text);
-  if(ok){ orca.notify('info', `[${currentPluginName}] 已写回选区的硬格式化文本`); }
-  else { orca.notify('warn', `[${currentPluginName}] 未能写回选区，请手动粘贴剪贴板内容`); await copyText(text); }
-}
-function scheduleProcess(cfg){
-  if(textTransformDebounceTimer) return;
-  if(cfg.pauseTyping && isUserTyping) return;
-  textTransformDebounceTimer = setTimeout(()=>{
-    textTransformDebounceTimer = null;
-    if(textTransformRoot) processTree(textTransformRoot,cfg);
-  }, cfg.debounceMs || 5000);
-}
-function startTextTransforms(cfg){
-  if(textTransformObserver) return;
-  textTransformRoot = getTransformRoot(cfg.rootSelector);
-  processTree(textTransformRoot,cfg);
-  textTransformObserver=new MutationObserver((mut)=>{ scheduleProcess(cfg); });
-  textTransformObserver.observe(textTransformRoot,{childList:true,subtree:true});
-  const markTyping=()=>{
-    if(!cfg.pauseTyping) return;
-    isUserTyping = true;
-    if(typingIdleTimer){ clearTimeout(typingIdleTimer); typingIdleTimer=null; }
-    typingIdleTimer = setTimeout(()=>{
-      isUserTyping = false;
-      scheduleProcess(cfg);
-    }, cfg.typingIdleMs || 3000);
-  };
-  const types=['keydown','keyup','input','beforeinput','compositionstart','compositionupdate','compositionend','paste'];
-  textTransformTypingHandlers = types.map(t=>{
-    const h=(e)=>{ if(textTransformRoot && textTransformRoot.contains(e.target)){ markTyping(); } };
-    document.addEventListener(t,h,true);
-    return {t, h};
-  });
-}
-function stopTextTransforms(){
-  if(textTransformObserver){
-    textTransformObserver.disconnect();
-    textTransformObserver=null;
-  }
-  textTransformRoot=null;
-  if(textTransformDebounceTimer){ clearTimeout(textTransformDebounceTimer); textTransformDebounceTimer=null; }
-  if(typingIdleTimer){ clearTimeout(typingIdleTimer); typingIdleTimer=null; }
-  if(textTransformTypingHandlers && textTransformTypingHandlers.length){
-    for(const {t,h} of textTransformTypingHandlers){ document.removeEventListener(t,h,true); }
-    textTransformTypingHandlers = [];
-  }
+  return null;
 }
 
 /**
- * 应用字体族相关的设置。
- * @param {object} params - 包含各字体族设置值的对象。
- * @param {string} params.editorFontFamily
- * @param {string} params.uiFontFamily
- * @param {string} params.codeFontFamily
+ * 从当前选区收集涉及的所有块 ID（去重、保序）
  */
-function applyFontFamilySettings() {}
+function getSelectedBlockIds() {
+  const sel = window.getSelection?.();
+  if (!sel || !sel.rangeCount) return [];
+  const range = sel.getRangeAt(0);
+  const ids = new Set();
+
+  // 起点和终点块
+  const startId = findBlockIdFromNode(range.startContainer);
+  const endId = findBlockIdFromNode(range.endContainer);
+  if (startId) ids.add(startId);
+
+  // 如果选区跨块，遍历中间节点
+  if (startId !== endId) {
+    const walker = document.createTreeWalker(
+      range.commonAncestorContainer,
+      NodeFilter.SHOW_ELEMENT,
+      { acceptNode: n => {
+        const bid = n.getAttribute('data-block-id') || n.getAttribute('data-id');
+        return bid ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      }}
+    );
+    let n;
+    while ((n = walker.nextNode())) {
+      if (range.intersectsNode(n)) {
+        const bid = n.getAttribute('data-block-id') || n.getAttribute('data-id');
+        if (bid) ids.add(bid);
+      }
+    }
+  }
+
+  if (endId) ids.add(endId);
+  return [...ids];
+}
+
+/**
+ * 硬格式化写回：通过 Orca API 持久化，保留富文本格式
+ */
+async function hardFormatSelectionWriteback(cfg) {
+  const blockIds = getSelectedBlockIds();
+
+  // 如果找不到块 ID，降级到剪贴板
+  if (!blockIds.length) {
+    const root = getEffectiveRootForSelection(cfg.rootSelector);
+    const holder = getSelectionHolder(root);
+    processTree(holder, { ...cfg, detached: true });
+    await copyText(collectFormattedText(holder));
+    return;
+  }
+
+  const updates = [];
+  for (const bid of blockIds) {
+    const block = orca.state.blocks?.[bid];
+    if (!block?.content) continue;
+    const newContent = formatContentFragments(block.content, cfg);
+    if (newContent) {
+      updates.push({ id: parseInt(bid), content: newContent });
+    }
+  }
+
+  if (!updates.length) {
+    orca.notify('info', `[${currentPluginName}] 选区内容无需格式化`);
+    return;
+  }
+
+  await orca.commands.invokeEditorCommand(
+    "core.editor.setBlocksContent",
+    null,
+    updates,
+    false
+  );
+  orca.notify('info', `[${currentPluginName}] 已格式化并写回 ${updates.length} 个块`);
+}
 
 /**
  * 应用并验证全局基础字体大小设置。
@@ -554,12 +594,12 @@ function applyCustomStyles(savedSettings) {
   const enableAutoSpacing = toBool(getSettingValue('enableAutoSpacing', savedSettings));
   const enableEnhancedSpacing = toBool(getSettingValue('enableEnhancedSpacing', savedSettings));
   const customSpacingRulesRaw = getSettingValue('customSpacingRules', savedSettings);
-  const compiledSpacingRules = compileRules(customSpacingRulesRaw);
+  const compiledSpacingRules = compileRules(customSpacingRulesRaw, '自定义空格规则');
   const enablePunctuationPreview = toBool(getSettingValue('enablePunctuationPreview', savedSettings));
   const enablePunctuationEnhanced = toBool(getSettingValue('enablePunctuationEnhanced', savedSettings));
   const punctuationStyle = String(getSettingValue('punctuationStyle', savedSettings) || 'mainland');
   const customPunctuationRulesRaw = getSettingValue('customPunctuationRules', savedSettings);
-  const compiledPuncRules = compileRules(customPunctuationRulesRaw);
+  const compiledPuncRules = compileRules(customPunctuationRulesRaw, '自定义标点规则');
   const transformRootSelector = getSettingValue('transformRootSelector', savedSettings);
   const transformDebounceMsStr = getSettingValue('transformDebounceMs', savedSettings);
   const unitWhitelistCsv = getSettingValue('unitWhitelist', savedSettings);
@@ -572,7 +612,6 @@ function applyCustomStyles(savedSettings) {
   const typingIdleMsParsed = parseInt(String(typingIdleMsStr||'3000'),10);
   const typingIdleMs = isNaN(typingIdleMsParsed) ? 3000 : Math.max(0, typingIdleMsParsed);
 
-  applyFontFamilySettings();
   applyBaseFontSizeSetting(baseFontSize);
   applyGlobalLineHeightSetting(globalLineHeight);
   updateTypographyStyles({ bodyLigatures, codeLigatures, numericTabular });
@@ -649,6 +688,29 @@ function applyCustomStyles(savedSettings) {
   if(!hardFormatToClipboard){ hardFormatOnceUsed = false; }
 }
 
+/**
+ * 从当前设置构建硬格式化配置对象
+ */
+function buildHardFormatConfig() {
+  const settings = orca.state.plugins[currentPluginName]?.settings;
+  const unitWhitelistCsv = getSettingValue('unitWhitelist', settings);
+  const debounceMsStr = getSettingValue('transformDebounceMs', settings);
+  const debounceMsParsed = parseInt(String(debounceMsStr||'5000'),10);
+  return {
+    enhanced: toBool(getSettingValue('enableEnhancedSpacing', settings)),
+    customSpacing: compileRules(getSettingValue('customSpacingRules', settings), '自定义空格规则'),
+    unitRe: buildUnitRegex(unitWhitelistCsv),
+    exceptionRe: defaultExceptionRe,
+    puncEnabled: true,
+    puncEnhanced: toBool(getSettingValue('enablePunctuationEnhanced', settings)),
+    puncStyle: String(getSettingValue('punctuationStyle', settings) || 'mainland'),
+    customPunc: compileRules(getSettingValue('customPunctuationRules', settings), '自定义标点规则'),
+    rootSelector: String(getSettingValue('transformRootSelector', settings)||''),
+    debounceMs: isNaN(debounceMsParsed) ? 5000 : Math.max(0, debounceMsParsed),
+    highlight: false
+  };
+}
+
 // --- 插件生命周期函数 ---
 
 /**
@@ -661,78 +723,26 @@ export async function load(pluginName) {
     const initialSettings = orca.state.plugins[currentPluginName]?.settings;
     const debugSetting = getSettingValue('debugLogs', initialSettings);
     setDebugLogging(toBool(debugSetting));
-    console.log(`[${currentPluginName}] load TRACE - 1. Plugin loading... (Version: 1.1.0)`);
+    console.log(`[${currentPluginName}] Plugin loading...`);
 
     await orca.plugins.setSettingsSchema(currentPluginName, settingsSchema);
-    console.log(`[${currentPluginName}] load TRACE - 2. Settings schema registered.`);
+    console.log(`[${currentPluginName}] Settings schema registered.`);
 
     applyCustomStyles(initialSettings);
     const cmdId = `${currentPluginName}.hardFormatClipboard`;
     orca.commands.registerCommand(cmdId, async () => {
       try{
-        const settings = orca.state.plugins[currentPluginName]?.settings;
-        const enableEnhancedSpacing = toBool(getSettingValue('enableEnhancedSpacing', settings));
-        const customSpacingRulesRaw = getSettingValue('customSpacingRules', settings);
-        const compiledSpacingRules = compileRules(customSpacingRulesRaw);
-        const enablePunctuationEnhanced = toBool(getSettingValue('enablePunctuationEnhanced', settings));
-        const punctuationStyle = String(getSettingValue('punctuationStyle', settings) || 'mainland');
-        const customPunctuationRulesRaw = getSettingValue('customPunctuationRules', settings);
-        const compiledPuncRules = compileRules(customPunctuationRulesRaw);
-        const transformRootSelector = getSettingValue('transformRootSelector', settings);
-        const transformDebounceMsStr = getSettingValue('transformDebounceMs', settings);
-        const unitWhitelistCsv = getSettingValue('unitWhitelist', settings);
-        const debounceMsParsed = parseInt(String(transformDebounceMsStr||'5000'),10);
-        const debounceMs = isNaN(debounceMsParsed) ? 5000 : Math.max(0, debounceMsParsed);
-        const unitRegex = buildUnitRegex(unitWhitelistCsv);
-        await exportHardFormatToClipboard({
-          enhanced: enableEnhancedSpacing,
-          customSpacing: compiledSpacingRules,
-          unitRe: unitRegex,
-          exceptionRe: defaultExceptionRe,
-          puncEnabled: true,
-          puncEnhanced: enablePunctuationEnhanced,
-          puncStyle: punctuationStyle,
-          customPunc: compiledPuncRules,
-          rootSelector: String(transformRootSelector||''),
-          debounceMs,
-          highlight: false
-        });
+        await exportHardFormatToClipboard(buildHardFormatConfig());
       }catch(e){
         console.error(`[${currentPluginName}] hardFormatClipboard error`, e);
         orca.notify('error', `[${currentPluginName}] 硬格式化失败：${e?.message||e}`);
       }
     }, "硬格式化到剪贴板");
-    
+
     const cmdIdWrite = `${currentPluginName}.hardFormatWriteback`;
     orca.commands.registerCommand(cmdIdWrite, async () => {
       try{
-        const settings = orca.state.plugins[currentPluginName]?.settings;
-        const enableEnhancedSpacing = toBool(getSettingValue('enableEnhancedSpacing', settings));
-        const customSpacingRulesRaw = getSettingValue('customSpacingRules', settings);
-        const compiledSpacingRules = compileRules(customSpacingRulesRaw);
-        const enablePunctuationEnhanced = toBool(getSettingValue('enablePunctuationEnhanced', settings));
-        const punctuationStyle = String(getSettingValue('punctuationStyle', settings) || 'mainland');
-        const customPunctuationRulesRaw = getSettingValue('customPunctuationRules', settings);
-        const compiledPuncRules = compileRules(customPunctuationRulesRaw);
-        const transformRootSelector = getSettingValue('transformRootSelector', settings);
-        const transformDebounceMsStr = getSettingValue('transformDebounceMs', settings);
-        const unitWhitelistCsv = getSettingValue('unitWhitelist', settings);
-        const debounceMsParsed = parseInt(String(transformDebounceMsStr||'5000'),10);
-        const debounceMs = isNaN(debounceMsParsed) ? 5000 : Math.max(0, debounceMsParsed);
-        const unitRegex = buildUnitRegex(unitWhitelistCsv);
-        await hardFormatSelectionWriteback({
-          enhanced: enableEnhancedSpacing,
-          customSpacing: compiledSpacingRules,
-          unitRe: unitRegex,
-          exceptionRe: defaultExceptionRe,
-          puncEnabled: true,
-          puncEnhanced: enablePunctuationEnhanced,
-          puncStyle: punctuationStyle,
-          customPunc: compiledPuncRules,
-          rootSelector: String(transformRootSelector||''),
-          debounceMs,
-          highlight: false
-        });
+        await hardFormatSelectionWriteback(buildHardFormatConfig());
       }catch(e){
         console.error(`[${currentPluginName}] hardFormatWriteback error`, e);
         orca.notify('error', `[${currentPluginName}] 硬格式化写回失败：${e?.message||e}`);
@@ -755,21 +765,21 @@ export async function load(pluginName) {
 
         if (changedRelevantSettings) {
           const newSettings = orca.state.plugins[currentPluginName]?.settings;
-          console.log(`[${currentPluginName}] load TRACE - 5. Settings changed via subscription`);
+          console.log(`[${currentPluginName}] Settings changed via subscription`);
           const debugSetting2 = getSettingValue('debugLogs', newSettings);
           setDebugLogging(toBool(debugSetting2));
           applyCustomStyles(newSettings);
         }
       });
-      console.log(`[${currentPluginName}] load TRACE - 6. Subscribed to settings changes.`);
+      console.log(`[${currentPluginName}] Subscribed to settings changes.`);
     } else {
-      console.warn(`[${currentPluginName}] load TRACE - 6. window.Valtio.subscribe not available. Settings changes may require plugin reload or app restart to apply.`);
+      console.warn(`[${currentPluginName}] Valtio.subscribe not available. Settings changes may require plugin reload.`);
       orca.notify("warn", `[${currentPluginName}] 字体样式设置实时更新可能不可用，更改后请尝试重启插件或应用。`);
     }
 
     notifyInfo(`[${currentPluginName}] 插件已加载，请在设置中配置字体样式！`);
   } catch (error) {
-    console.error(`[${currentPluginName}] load TRACE - E. Error loading plugin:`, error);
+    console.error(`[${currentPluginName}] Error loading plugin:`, error);
     orca.notify("error", `[${currentPluginName}] 加载失败: ${error.message}`);
   }
 }
@@ -779,13 +789,13 @@ export async function load(pluginName) {
  * 负责清理工作，如取消订阅、移除动态添加的样式。
  */
 export async function unload() {
-  console.log(`[${currentPluginName}] unload TRACE - 1. Plugin unloading...`);
+  console.log(`[${currentPluginName}] Plugin unloading...`);
 
   // 取消订阅设置变化
   if (unsubscribeFromSettings) {
     unsubscribeFromSettings();
     unsubscribeFromSettings = null;
-    console.log(`[${currentPluginName}] unload TRACE - 2. Unsubscribed from settings changes.`);
+    console.log(`[${currentPluginName}] Unsubscribed from settings changes.`);
   }
   try{
     orca.commands.unregisterCommand(`${currentPluginName}.hardFormatClipboard`);
@@ -796,8 +806,6 @@ export async function unload() {
   document.documentElement.style.removeProperty(CSS_VAR_BASE_FONT_SIZE);
   document.documentElement.style.removeProperty(CSS_VAR_GLOBAL_LINE_HEIGHT);
 
-  stopTextTransforms();
-  
   // 清理 PreviewFormatter
   if (previewFormatter) {
     previewFormatter.stop();
@@ -813,7 +821,7 @@ export async function unload() {
   if (styleEl) styleEl.remove();
   console.log = originalConsoleLog;
 
-  console.log(`[${currentPluginName}] unload TRACE - 3. Custom font styles removed from :root.`);
+  console.log(`[${currentPluginName}] Custom styles removed from :root.`);
   orca.notify("info", `[${currentPluginName}] 插件已卸载，自定义字体样式已移除。`);
 }
 
@@ -844,10 +852,9 @@ class PreviewFormatter {
     }
 
     this.config = config;
-    this.root = this.getRoot(config.rootSelector);
-    
-    // 立即处理一次
-    this.processTree(this.root, config);
+    this.root = getTransformRoot(config.rootSelector);
+
+    processTree(this.root, config);
     
     // 启动 MutationObserver
     this.observer = new MutationObserver(() => {
@@ -895,30 +902,20 @@ class PreviewFormatter {
   }
 
   /**
-   * 获取格式化根元素
-   */
-  getRoot(selector) {
-    if (selector) {
-      try {
-        const el = document.querySelector(selector);
-        if (el) return el;
-      } catch (_) {}
-    }
-    const md = document.querySelector('.markdown-body');
-    return md || document.body;
-  }
-
-  /**
    * 调度处理
    */
   scheduleProcess() {
     if (this.debounceTimer) return;
-    
+
     if (this.config?.pauseTyping && this.isUserTyping) return;
-    
+
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
-      if (this.root) this.processTree(this.root, this.config);
+      if (!this.root || !this.observer) return;
+      // 暂停 observer 防止 processTree 修改 DOM 后触发循环
+      this.observer.disconnect();
+      processTree(this.root, this.config);
+      this.observer.observe(this.root, { childList: true, subtree: true });
     }, this.config?.debounceMs || 5000);
   }
 
@@ -953,114 +950,6 @@ class PreviewFormatter {
       return { t, h };
     });
   }
-
-  /**
-   * 处理 DOM 树
-   */
-  processTree(root, cfg) {
-    try {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-        acceptNode: (n) => {
-          if (!n.nodeValue || !/\S/.test(n.nodeValue)) return NodeFilter.FILTER_REJECT;
-          if (this.shouldSkipTextNode(n, cfg)) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        }
-      });
-      
-      let node;
-      while ((node = walker.nextNode())) {
-        const t = node.nodeValue;
-        let s = this.applySpacing(t, cfg);
-        s = this.applyPunctuation(s, {
-          enabled: cfg.puncEnabled,
-          enhanced: cfg.puncEnhanced,
-          style: cfg.puncStyle,
-          customPunc: cfg.customPunc
-        });
-        
-        if (s !== t) {
-          node.nodeValue = s;
-          if (cfg.highlight) {
-            const p = node.parentElement;
-            if (p) p.setAttribute('data-typo-touched', '');
-          }
-        }
-      }
-    } catch (_) {}
-  }
-
-  /**
-   * 判断是否跳过文本节点
-   */
-  shouldSkipTextNode(n, cfg) {
-    const el = n.parentElement;
-    if (!el) return true;
-    
-    const skip = ['CODE', 'PRE', 'KBD', 'SAMP', 'SCRIPT', 'STYLE', 'A'];
-    if (skip.includes(el.tagName)) return true;
-    
-    if (el.closest('[contenteditable="true"], textarea, input')) return true;
-    if (el.closest('code, pre, kbd, samp')) return true;
-    if (el.closest('.code, .code-block, .inline-code')) return true;
-    if (el.closest('[class*="hljs"], [class*="code"], [role="code"], [data-code-block], [data-lang], [data-language]')) return true;
-    if (!cfg?.detached && el.closest('.cm-content, .cm-line, .CodeMirror, .monaco-editor, .ace_editor')) return true;
-    
-    return false;
-  }
-
-  /**
-   * 应用空格规则
-   */
-  applySpacing(s, cfg) {
-    s = String(s).replace(reCjkThenLat, '$1 $2').replace(reLatThenCjk, '$1 $2');
-    
-    if (cfg.enhanced) {
-      const uRe = cfg.unitRe || buildUnitRegex('');
-      const exRe = cfg.exceptionRe || defaultExceptionRe;
-      s = s.replace(uRe, '$1 ').replace(exRe, '$1$2');
-    }
-    
-    for (const r of (cfg.customSpacing || [])) {
-      try {
-        s = s.replace(r.p, r.rep);
-      } catch (_) {}
-    }
-    
-    return s;
-  }
-
-  /**
-   * 应用标点规则
-   */
-  applyPunctuation(s, cfg) {
-    if (!cfg.enabled) return s;
-    
-    s = String(s);
-    
-    if (cfg.enhanced) {
-      s = s.replace(beforeFullWidth, '$1').replace(afterOpening, '$1');
-    }
-    
-    const style = (cfg.style || 'mainland').toLowerCase();
-    
-    if (style === 'mainland') {
-      s = s.replace(/『([^』]+)』/g, '\u2018$1\u2019').replace(/「([^「]+)」/g, '\u201c$1\u201d');
-      s = s.replace(new RegExp('(' + CJK_RANGE + ')\\s*"([^"]+)"\\s*(' + CJK_RANGE + ')', 'g'), '$1\u201c$2\u201d$3');
-      s = s.replace(new RegExp('(' + CJK_RANGE + ")\\s*'([^']+)'\\s*(" + CJK_RANGE + ')', 'g'), '$1\u2018$2\u2019$3');
-    } else if (style === 'tw-hk') {
-      s = s.replace(/"([^"]+)"/g, '\u300c$1\u300d').replace(/'([^']+)'/g, '\u300e$1\u300f');
-    } else if (style === 'tech') {
-      s = s.replace(/『([^』]+)』/g, '\u2018$1\u2019').replace(/「([^「]+)」/g, '\u201c$1\u201d');
-    }
-    
-    for (const r of (cfg.customPunc || [])) {
-      try {
-        s = s.replace(r.p, r.rep);
-      } catch (_) {}
-    }
-    
-    return s;
-  }
 }
 
 // --- AutoFormatter 类: 编辑层格式化 ---
@@ -1094,21 +983,12 @@ class AutoFormatter {
     this.currentBlockId = null;
     this.previousBlockId = null;
 
-    console.log(`[${currentPluginName}] AutoFormatter starting...`);
-    console.log(`[${currentPluginName}] orca.state structure:`, {
-      hasBlocks: !!orca.state.blocks,
-      blocksKeys: orca.state.blocks ? Object.keys(orca.state.blocks) : [],
-      hasCursor: !!orca.state.cursor,
-      cursor: orca.state.cursor,
-      allStateKeys: Object.keys(orca.state)
-    });
-
     // 订阅状态变化
     if (window.Valtio && typeof window.Valtio.subscribe === 'function') {
       this.unsubscribe = window.Valtio.subscribe(orca.state, (ops) => {
         this.handleStateChange(ops);
       });
-      console.log(`[${currentPluginName}] AutoFormatter started and subscribed to state changes`);
+      console.log(`[${currentPluginName}] AutoFormatter started`);
     } else {
       console.error(`[${currentPluginName}] AutoFormatter: Valtio.subscribe not available`);
     }
@@ -1141,71 +1021,40 @@ class AutoFormatter {
    * 处理状态变化
    */
   handleStateChange(ops) {
-    console.log(`[${currentPluginName}] handleStateChange - Received ${ops.length} ops`);
-
     ops.forEach(op => {
       const [type, path, newValue, oldValue] = op;
 
-      // 输出完整的路径信息
-      const pathStr = path.join('.');
-      console.log(`[${currentPluginName}] State change: type=${type}, path=[${pathStr}], newValue=`, newValue, ', oldValue=', oldValue);
-
-      // 监听块变化 - OrcaNote 会设置整个块对象，而不是单独的 text 字段
       if (type === 'set' && path.length === 2 && path[0] === 'blocks') {
         const blockId = path[1];
 
-        // 检测新块创建（oldValue 为 undefined 或 null）
         if (!oldValue && newValue) {
-          console.log(`[${currentPluginName}] ✓ New block created: ${blockId}`);
-
-          // 新块创建时，延迟格式化所有 dirty 块
-          // 延迟是为了等待 OrcaNote 完成所有内部更新
           if (this.dirtyBlocks.size > 0) {
-            console.log(`[${currentPluginName}] New block created, scheduling formatting for ${this.dirtyBlocks.size} dirty block(s) after delay`);
             const blocksToFormat = Array.from(this.dirtyBlocks);
-
-            // 延迟 150ms 后格式化，让 OrcaNote 完成所有更新
             setTimeout(() => {
               blocksToFormat.forEach(dirtyBlockId => {
-                if (dirtyBlockId !== blockId) { // 不格式化刚创建的空块
-                  this.scheduleFormat(dirtyBlockId);
-                }
+                if (dirtyBlockId !== blockId) this.scheduleFormat(dirtyBlockId);
               });
             }, 150);
           }
         }
-        // 检查现有块的 text 字段是否发生了变化
         else if (newValue && oldValue && newValue.text !== oldValue.text) {
-          // 忽略正在格式化的块的状态变化（避免循环格式化）
-          if (this.formattingBlocks.has(blockId)) {
-            console.log(`[${currentPluginName}] Ignoring text change in formatting block: ${blockId}`);
-            return;
-          }
-
+          if (this.formattingBlocks.has(blockId)) return;
           this.dirtyBlocks.add(blockId);
-          console.log(`[${currentPluginName}] ✓ Block marked as dirty: ${blockId} (text changed)`);
-
-          // 不立即格式化，只在新块创建时触发格式化
-          // 这样最稳健，不会干扰用户输入
         }
       }
 
-      // 监听光标/选择变化 - 从路径中提取块 ID
       if (type === 'set') {
-        // 路径格式: panels.children.0.viewState.{blockId}.selection
+        const pathStr = path.join('.');
         if (pathStr.includes('viewState') && pathStr.includes('selection')) {
-          console.log(`[${currentPluginName}] ✓ Selection/Cursor state detected: [${pathStr}]`);
-
-          // 从路径中提取块 ID
-          // 路径格式: ['panels', 'children', '0', 'viewState', 'blockId', 'selection']
           if (path.length >= 6 && path[3] === 'viewState' && path[5] === 'selection') {
-            const blockIdFromPath = path[4];
-            console.log(`[${currentPluginName}] Extracted block ID from path: ${blockIdFromPath}`);
-            this.handleCursorChangeWithBlockId(blockIdFromPath);
+            this.handleCursorMove(path[4]);
           } else {
-            // 降级到 DOM 查找
-            console.log(`[${currentPluginName}] Could not extract block ID from path, using DOM lookup`);
-            this.handleCursorChange();
+            // DOM fallback
+            const sel = window.getSelection?.();
+            if (sel?.rangeCount) {
+              const bid = findBlockIdFromNode(sel.getRangeAt(0).commonAncestorContainer);
+              if (bid) this.handleCursorMove(bid);
+            }
           }
         }
       }
@@ -1213,160 +1062,15 @@ class AutoFormatter {
   }
 
   /**
-   * 处理光标变化（使用直接传入的 block ID）
+   * 处理光标移动到新块
    */
-  handleCursorChangeWithBlockId(newBlockId) {
-    if (newBlockId && newBlockId !== this.currentBlockId) {
-      // 光标移动到了新块
-      this.previousBlockId = this.currentBlockId;
-      this.currentBlockId = newBlockId;
-
-      // 如果离开了上一个块,且该块需要格式化,则触发格式化
-      if (this.previousBlockId && this.dirtyBlocks.has(this.previousBlockId)) {
-        this.scheduleFormat(this.previousBlockId);
-      }
-
-      console.log(`[${currentPluginName}] ✓ Cursor moved: ${this.previousBlockId} -> ${this.currentBlockId}`);
-    } else {
-      console.log(`[${currentPluginName}] Cursor in same block: ${newBlockId} (no change)`);
-      // 不在同一个块内格式化，避免干扰用户打字
+  handleCursorMove(newBlockId) {
+    if (!newBlockId || newBlockId === this.currentBlockId) return;
+    this.previousBlockId = this.currentBlockId;
+    this.currentBlockId = newBlockId;
+    if (this.previousBlockId && this.dirtyBlocks.has(this.previousBlockId)) {
+      this.scheduleFormat(this.previousBlockId);
     }
-  }
-
-  /**
-   * 处理光标变化（通过 DOM 查找）
-   */
-  handleCursorChange() {
-    console.log(`[${currentPluginName}] handleCursorChange called`);
-    console.log(`[${currentPluginName}] currentBlockId:`, this.currentBlockId, 'previousBlockId:', this.previousBlockId);
-
-    const newBlockId = this.getCurrentBlockId();
-    console.log(`[${currentPluginName}] newBlockId from getCurrentBlockId():`, newBlockId);
-
-    if (newBlockId && newBlockId !== this.currentBlockId) {
-      // 光标移动到了新块
-      this.previousBlockId = this.currentBlockId;
-      this.currentBlockId = newBlockId;
-
-      // 如果离开了上一个块,且该块需要格式化,则触发格式化
-      if (this.previousBlockId && this.dirtyBlocks.has(this.previousBlockId)) {
-        this.scheduleFormat(this.previousBlockId);
-      }
-
-      console.log(`[${currentPluginName}] ✓ Cursor moved: ${this.previousBlockId} -> ${this.currentBlockId}`);
-    } else {
-      console.log(`[${currentPluginName}] Cursor in same block: ${newBlockId} (no change)`);
-      // 不在同一个块内格式化，避免干扰用户打字
-    }
-  }
-
-  /**
-   * 获取当前光标所在的块 ID
-   */
-  getCurrentBlockId() {
-    try {
-      console.log(`[${currentPluginName}] getCurrentBlockId - Starting...`);
-
-      const sel = window.getSelection && window.getSelection();
-      if (sel && sel.rangeCount) {
-        const range = sel.getRangeAt(0);
-        const node = range.commonAncestorContainer;
-
-        console.log(`[${currentPluginName}] getCurrentBlockId - Node:`, node, 'NodeType:', node.nodeType);
-
-        // 查找最近的块元素
-        let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-        console.log(`[${currentPluginName}] getCurrentBlockId - Initial element:`, el);
-
-        while (el && !this.isBlockElement(el)) {
-          el = el.parentElement;
-        }
-
-        console.log(`[${currentPluginName}] getCurrentBlockId - Found element after search:`, el);
-
-        if (el) {
-          console.log(`[${currentPluginName}] getCurrentBlockId - Element is not null, checking attributes...`);
-
-          // 方法1: 尝试从 data-block-id 属性获取
-          const blockId = el.getAttribute('data-block-id');
-          console.log(`[${currentPluginName}] getCurrentBlockId - data-block-id:`, blockId);
-          if (blockId) {
-            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via data-block-id:`, blockId);
-            return blockId;
-          }
-
-          // 方法2: 尝试从 data-id 属性获取
-          const id = el.getAttribute('data-id');
-          console.log(`[${currentPluginName}] getCurrentBlockId - data-id:`, id);
-          if (id) {
-            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via data-id:`, id);
-            return id;
-          }
-
-          // 方法3: 尝试从 id 属性获取(如果格式为 block-xxx)
-          const elId = el.id;
-          console.log(`[${currentPluginName}] getCurrentBlockId - id:`, elId);
-          if (elId && elId.startsWith('block-')) {
-            const result = elId.replace('block-', '');
-            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via id:`, result);
-            return result;
-          }
-
-          // 方法4: 尝试从 orca-state 属性获取
-          const orcaState = el.getAttribute('orca-state');
-          console.log(`[${currentPluginName}] getCurrentBlockId - orca-state:`, orcaState);
-          if (orcaState) {
-            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via orca-state:`, orcaState);
-            return orcaState;
-          }
-
-          // 方法5: 尝试从 closest 查找带有 data-block-id 的父元素
-          const parentWithBlockId = el.closest('[data-block-id]');
-          console.log(`[${currentPluginName}] getCurrentBlockId - parent with data-block-id:`, parentWithBlockId);
-          if (parentWithBlockId) {
-            const parentBlockId = parentWithBlockId.getAttribute('data-block-id');
-            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via parent data-block-id:`, parentBlockId);
-            return parentBlockId;
-          }
-
-          // 方法6: 尝试从 closest 查找带有 orca-state 的父元素
-          const parentWithOrcaState = el.closest('[orca-state]');
-          console.log(`[${currentPluginName}] getCurrentBlockId - parent with orca-state:`, parentWithOrcaState);
-          if (parentWithOrcaState) {
-            const parentOrcaState = parentWithOrcaState.getAttribute('orca-state');
-            console.log(`[${currentPluginName}] getCurrentBlockId - ✓ Found via parent orca-state:`, parentOrcaState);
-            return parentOrcaState;
-          }
-
-          console.log(`[${currentPluginName}] getCurrentBlockId - ✗ No block ID found on element:`, el);
-          console.log(`[${currentPluginName}] getCurrentBlockId - Element attributes:`, {
-            'data-block-id': el.getAttribute('data-block-id'),
-            'data-id': el.getAttribute('data-id'),
-            'id': el.id,
-            'orca-state': el.getAttribute('orca-state'),
-            'class': el.className
-          });
-        } else {
-          console.log(`[${currentPluginName}] getCurrentBlockId - Element is null!`);
-        }
-      } else {
-        console.log(`[${currentPluginName}] getCurrentBlockId - No selection or range`);
-      }
-    } catch (error) {
-      console.error(`[${currentPluginName}] getCurrentBlockId error:`, error);
-    }
-
-    console.log(`[${currentPluginName}] getCurrentBlockId - Returning null`);
-    return null;
-  }
-
-  /**
-   * 判断是否为块元素
-   */
-  isBlockElement(el) {
-    if (!el) return false;
-    const tag = el.tagName;
-    return ['P', 'DIV', 'LI', 'UL', 'OL', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'SECTION', 'ARTICLE'].includes(tag);
   }
 
   /**
@@ -1387,10 +1091,7 @@ class AutoFormatter {
    * 格式化块
    */
   async formatBlock(blockId) {
-    if (!this.dirtyBlocks.has(blockId)) {
-      console.log(`[${currentPluginName}] Block already formatted: ${blockId}`);
-      return;
-    }
+    if (!this.dirtyBlocks.has(blockId)) return;
 
     try {
       const block = orca.state.blocks[blockId];
@@ -1400,173 +1101,50 @@ class AutoFormatter {
         return;
       }
 
-      // 应用格式化规则
-      const originalText = block.text || '';
-
-      // 移除所有尾部换行符（OrcaNote 会自动管理换行）
-      const contentWithoutTrailing = originalText.replace(/\n*$/, '');
-
-      console.log(`[${currentPluginName}] Original text:`, originalText);
-      console.log(`[${currentPluginName}] Content without trailing newlines:`, contentWithoutTrailing);
-
       // 如果内容为空，跳过格式化
-      if (!contentWithoutTrailing.trim()) {
-        console.log(`[${currentPluginName}] Skipping empty block`);
+      if (!block.text?.trim()) {
         this.dirtyBlocks.delete(blockId);
         return;
       }
 
-      // 只格式化有意义的内容部分
-      let formattedContent = this.applySpacing(contentWithoutTrailing, this.config);
-      formattedContent = this.applyPunctuation(formattedContent, {
-        enabled: this.config.puncEnabled,
-        enhanced: this.config.puncEnhanced,
-        style: this.config.puncStyle,
-        customPunc: this.config.customPunc
-      });
+      // 使用 formatContentFragments 保留富文本格式（bold/italic 等）
+      const newContent = formatContentFragments(block.content || [], this.config);
 
-      console.log(`[${currentPluginName}] Formatted content:`, formattedContent);
-
-      // 如果文本有变化,使用 Editor Command 更新
-      // 注意：不要添加换行符，OrcaNote 会自动管理
-      if (formattedContent !== contentWithoutTrailing) {
-        await this.updateBlockText(blockId, formattedContent, contentWithoutTrailing);
+      // newContent 为 null 表示无变化
+      if (newContent) {
+        await this.updateBlockContent(blockId, newContent);
       }
 
-      // 清除 dirty 标记
       this.dirtyBlocks.delete(blockId);
-
-      console.log(`[${currentPluginName}] Block formatted: ${blockId}`);
     } catch (error) {
       console.error(`[${currentPluginName}] Format block error:`, error);
     }
   }
 
   /**
-   * 更新块文本
+   * 更新块内容（保留富文本格式）
    */
-  async updateBlockText(blockId, newText, oldText) {
+  async updateBlockContent(blockId, newContent) {
     try {
-      console.log(`[${currentPluginName}] updateBlockText called for block ${blockId}`);
-      console.log(`[${currentPluginName}] oldText:`, oldText);
-      console.log(`[${currentPluginName}] newText:`, newText);
+      if (!orca.state.blocks?.[blockId]) return;
 
-      // 详细检查块是否存在
-      console.log(`[${currentPluginName}] Checking if block exists...`);
-      console.log(`[${currentPluginName}] orca.state.blocks exists:`, !!orca.state.blocks);
-      console.log(`[${currentPluginName}] blockId type:`, typeof blockId, `value:`, blockId);
-      console.log(`[${currentPluginName}] block exists in state:`, !!orca.state.blocks?.[blockId]);
-      console.log(`[${currentPluginName}] Available block IDs:`, orca.state.blocks ? Object.keys(orca.state.blocks).slice(0, 10) : 'none');
-
-      // 检查块是否存在
-      if (!orca.state.blocks || !orca.state.blocks[blockId]) {
-        console.warn(`[${currentPluginName}] ⚠️ Block not found: ${blockId}`);
-        console.warn(`[${currentPluginName}] This might be because the block was deleted or the ID is incorrect`);
-        return;
-      }
-
-      const block = orca.state.blocks[blockId];
-      console.log(`[${currentPluginName}] ✓ Block found:`, block);
-
-      // 标记为正在格式化（避免循环格式化）
       this.formattingBlocks.add(blockId);
-      console.log(`[${currentPluginName}] Marked block ${blockId} as formatting`);
-
-      // 将文本转换为 content fragments 格式
-      const newContent = [{ t: "t", v: newText }];
-
-      console.log(`[${currentPluginName}] Calling core.editor.setBlocksContent`);
-      console.log(`[${currentPluginName}] New content:`, newContent);
-
-      // 使用 core.editor.setBlocksContent 命令更新块内容
-      // 这会正确更新光标位置和 UI，但会记录到撤销栈
-      const updates = [
-        {
-          id: parseInt(blockId),  // 确保 ID 是数字类型
-          content: newContent
-        }
-      ];
-
-      console.log(`[${currentPluginName}] Updates to apply:`, updates);
-      console.log(`[${currentPluginName}] About to call orca.commands.invokeEditorCommand...`);
 
       await orca.commands.invokeEditorCommand(
         "core.editor.setBlocksContent",
-        null,           // cursor 参数
-        updates,        // 要更新的块数组
-        false           // setBackCursor: 不恢复光标位置
+        null,
+        [{ id: parseInt(blockId), content: newContent }],
+        false
       );
 
-      console.log(`[${currentPluginName}] ✓ Block content updated via setBlocksContent`);
+      console.log(`[${currentPluginName}] Block ${blockId} content updated`);
 
-      // 延迟清除格式化标记
       setTimeout(() => {
         this.formattingBlocks.delete(blockId);
-        console.log(`[${currentPluginName}] Removed formatting mark from block ${blockId}`);
       }, 500);
-
     } catch (error) {
-      console.error(`[${currentPluginName}] ❌ Update block text error:`, error);
-      console.error(`[${currentPluginName}] Error details:`, error.stack);
-      console.error(`[${currentPluginName}] Error name:`, error.name);
-      console.error(`[${currentPluginName}] Error message:`, error.message);
-      // 确保清除格式化标记
+      console.error(`[${currentPluginName}] Update block content error:`, error);
       this.formattingBlocks.delete(blockId);
-      throw error;
     }
-  }
-
-  /**
-   * 应用空格规则
-   */
-  applySpacing(s, cfg) {
-    s = String(s).replace(reCjkThenLat, '$1 $2').replace(reLatThenCjk, '$1 $2');
-    
-    if (cfg.enhanced) {
-      const uRe = cfg.unitRe || buildUnitRegex('');
-      const exRe = cfg.exceptionRe || defaultExceptionRe;
-      s = s.replace(uRe, '$1 ').replace(exRe, '$1$2');
-    }
-    
-    for (const r of (cfg.customSpacing || [])) {
-      try {
-        s = s.replace(r.p, r.rep);
-      } catch (_) {}
-    }
-    
-    return s;
-  }
-
-  /**
-   * 应用标点规则
-   */
-  applyPunctuation(s, cfg) {
-    if (!cfg.enabled) return s;
-    
-    s = String(s);
-    
-    if (cfg.enhanced) {
-      s = s.replace(beforeFullWidth, '$1').replace(afterOpening, '$1');
-    }
-    
-    const style = (cfg.style || 'mainland').toLowerCase();
-    
-    if (style === 'mainland') {
-      s = s.replace(/『([^』]+)』/g, '\u2018$1\u2019').replace(/「([^「]+)」/g, '\u201c$1\u201d');
-      s = s.replace(new RegExp('(' + CJK_RANGE + ')\\s*"([^"]+)"\\s*(' + CJK_RANGE + ')', 'g'), '$1\u201c$2\u201d$3');
-      s = s.replace(new RegExp('(' + CJK_RANGE + ")\\s*'([^']+)'\\s*(" + CJK_RANGE + ')', 'g'), '$1\u2018$2\u2019$3');
-    } else if (style === 'tw-hk') {
-      s = s.replace(/"([^"]+)"/g, '\u300c$1\u300d').replace(/'([^']+)'/g, '\u300e$1\u300f');
-    } else if (style === 'tech') {
-      s = s.replace(/『([^』]+)』/g, '\u2018$1\u2019').replace(/「([^「]+)」/g, '\u201c$1\u201d');
-    }
-    
-    for (const r of (cfg.customPunc || [])) {
-      try {
-        s = s.replace(r.p, r.rep);
-      } catch (_) {}
-    }
-    
-    return s;
   }
 }

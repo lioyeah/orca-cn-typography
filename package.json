@@ -3,5 +3,9 @@
   "version": "1.2.0",
   "description": "OrcaNote 中文高级排版增强插件。",
   "main": "dist/index.js",
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check:dist": "node --check dist/index.js"
+  }
 }

@@ -147,6 +147,30 @@ const settingsSchema = {
     defaultValue: "3000",
     description: "停止输入后延迟多少毫秒再应用排版（单位：毫秒）"
   },
+  previewIncremental: {
+    label: "预览增量处理 (高级)",
+    type: "boolean",
+    defaultValue: true,
+    description: "仅处理发生变化的 DOM 子树；大幅降低预览模式全量扫描开销"
+  },
+  previewFullScanThreshold: {
+    label: "   ↳ 预览全量回退阈值",
+    type: "string",
+    defaultValue: "200",
+    description: "单轮变更节点数超过该值时执行全量扫描（单位：节点数）"
+  },
+  autoBatchFlushMs: {
+    label: "Auto 批处理间隔 (高级)",
+    type: "string",
+    defaultValue: "16",
+    description: "Auto 模式批量处理脏块的间隔（毫秒）"
+  },
+  autoMinWriteIntervalMs: {
+    label: "Auto 最小写回间隔 (高级)",
+    type: "string",
+    defaultValue: "80",
+    description: "两次 setBlocksContent 之间的最小间隔（毫秒）"
+  },
   unitWhitelist: {
     label: "单位白名单 (高级)",
     type: "string",
@@ -188,6 +212,10 @@ function getSettingValue(settingKey, savedSettings) {
   // 如果 schema 中也没有默认值（理论上我们都应该定义），则对于字符串类型返回空字符串
   // 对于其他类型（如 boolean 或 number, 如果以后用到），可能需要不同的后备逻辑
   return "";
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, ms || 0)));
 }
 
 /**
@@ -611,6 +639,16 @@ function applyCustomStyles(savedSettings) {
   const typingIdleMsStr = getSettingValue('typingIdleMs', savedSettings);
   const typingIdleMsParsed = parseInt(String(typingIdleMsStr||'3000'),10);
   const typingIdleMs = isNaN(typingIdleMsParsed) ? 3000 : Math.max(0, typingIdleMsParsed);
+  const previewIncremental = toBool(getSettingValue('previewIncremental', savedSettings));
+  const previewFullScanThresholdStr = getSettingValue('previewFullScanThreshold', savedSettings);
+  const previewFullScanThresholdParsed = parseInt(String(previewFullScanThresholdStr||'200'),10);
+  const previewFullScanThreshold = isNaN(previewFullScanThresholdParsed) ? 200 : Math.max(1, previewFullScanThresholdParsed);
+  const autoBatchFlushMsStr = getSettingValue('autoBatchFlushMs', savedSettings);
+  const autoBatchFlushMsParsed = parseInt(String(autoBatchFlushMsStr||'16'),10);
+  const autoBatchFlushMs = isNaN(autoBatchFlushMsParsed) ? 16 : Math.max(0, autoBatchFlushMsParsed);
+  const autoMinWriteIntervalMsStr = getSettingValue('autoMinWriteIntervalMs', savedSettings);
+  const autoMinWriteIntervalMsParsed = parseInt(String(autoMinWriteIntervalMsStr||'80'),10);
+  const autoMinWriteIntervalMs = isNaN(autoMinWriteIntervalMsParsed) ? 80 : Math.max(0, autoMinWriteIntervalMsParsed);
 
   applyBaseFontSizeSetting(baseFontSize);
   applyGlobalLineHeightSetting(globalLineHeight);
@@ -618,6 +656,7 @@ function applyCustomStyles(savedSettings) {
   
   // 根据 formattingMode 决定使用哪种格式化模式
   if (formattingMode === 'preview') {
+    if (autoFormatter) autoFormatter.stop();
     // Preview Mode: 显示层格式化
     if (enableAutoProcessing && (enableAutoSpacing || enablePunctuationPreview)) {
       // 使用 PreviewFormatter
@@ -637,7 +676,9 @@ function applyCustomStyles(savedSettings) {
         debounceMs,
         highlight: false,
         pauseTyping,
-        typingIdleMs
+        typingIdleMs,
+        incremental: previewIncremental,
+        fullScanThreshold: previewFullScanThreshold
       });
     } else {
       if (previewFormatter) {
@@ -645,6 +686,7 @@ function applyCustomStyles(savedSettings) {
       }
     }
   } else if (formattingMode === 'auto') {
+    if (previewFormatter) previewFormatter.stop();
     // Auto Mode: 编辑层格式化
     if (enableAutoProcessing && (enableAutoSpacing || enablePunctuationPreview)) {
       // 使用 AutoFormatter
@@ -659,13 +701,18 @@ function applyCustomStyles(savedSettings) {
         puncEnabled: enablePunctuationPreview,
         puncEnhanced: enablePunctuationEnhanced,
         puncStyle: punctuationStyle,
-        customPunc: compiledPuncRules
+        customPunc: compiledPuncRules,
+        autoBatchFlushMs,
+        autoMinWriteIntervalMs
       });
     } else {
       if (autoFormatter) {
         autoFormatter.stop();
       }
     }
+  } else {
+    if (previewFormatter) previewFormatter.stop();
+    if (autoFormatter) autoFormatter.stop();
   }
   if(hardFormatToClipboard && !hardFormatOnceUsed){
     exportHardFormatToClipboard({
@@ -839,6 +886,9 @@ class PreviewFormatter {
     this.isUserTyping = false;
     this.typingIdleTimer = null;
     this.config = null;
+    this.pendingRoots = new Set();
+    this.needsFullScan = false;
+    this.lastProcessReason = 'init';
   }
 
   /**
@@ -847,23 +897,24 @@ class PreviewFormatter {
    */
   start(config) {
     if (this.observer) {
-      console.warn(`[${currentPluginName}] PreviewFormatter already started`);
+      this.applyConfig(config);
       return;
     }
 
-    this.config = config;
-    this.root = getTransformRoot(config.rootSelector);
+    this.config = { ...config };
+    this.root = getTransformRoot(this.config.rootSelector);
 
-    processTree(this.root, config);
+    processTree(this.root, this.config);
     
     // 启动 MutationObserver
-    this.observer = new MutationObserver(() => {
-      this.scheduleProcess();
+    this.observer = new MutationObserver((mutations) => {
+      this.handleMutations(mutations);
+      this.scheduleProcess('mutation');
     });
-    this.observer.observe(this.root, { childList: true, subtree: true });
+    this.observer.observe(this.root, { childList: true, characterData: true, subtree: true });
     
     // 启动输入监听
-    this.startTypingHandlers(config);
+    this.startTypingHandlers();
     
     console.log(`[${currentPluginName}] PreviewFormatter started`);
   }
@@ -897,34 +948,121 @@ class PreviewFormatter {
     }
     
     this.config = null;
+    this.pendingRoots.clear();
+    this.needsFullScan = false;
+    this.lastProcessReason = 'stopped';
     
     console.log(`[${currentPluginName}] PreviewFormatter stopped`);
+  }
+
+  applyConfig(config) {
+    const nextConfig = { ...config };
+    const nextRoot = getTransformRoot(nextConfig.rootSelector);
+    const rootChanged = this.root !== nextRoot;
+
+    this.config = nextConfig;
+
+    if (rootChanged && this.observer) {
+      this.observer.disconnect();
+      this.root = nextRoot;
+      this.pendingRoots.clear();
+      this.needsFullScan = true;
+      this.observer.observe(this.root, { childList: true, characterData: true, subtree: true });
+      this.scheduleProcess('root-change');
+    }
+
+    if (!rootChanged && this.root) {
+      this.scheduleProcess('config-change');
+    }
+  }
+
+  handleMutations(mutations) {
+    if (!this.root || !mutations?.length) return;
+
+    let touchedCount = 0;
+    for (const m of mutations) {
+      if (m.type === 'characterData') {
+        const parent = m.target?.parentElement;
+        if (parent && this.root.contains(parent)) {
+          this.pendingRoots.add(parent);
+          touchedCount++;
+        }
+      }
+
+      if (m.type === 'childList') {
+        if (m.target?.nodeType === Node.ELEMENT_NODE && this.root.contains(m.target)) {
+          this.pendingRoots.add(m.target);
+          touchedCount++;
+        }
+
+        if (m.addedNodes?.length) {
+          m.addedNodes.forEach(n => {
+            const el = n.nodeType === Node.TEXT_NODE ? n.parentElement : n;
+            if (el && el.nodeType === Node.ELEMENT_NODE && this.root.contains(el)) {
+              this.pendingRoots.add(el);
+              touchedCount++;
+            }
+          });
+        }
+      }
+    }
+
+    const threshold = this.config?.fullScanThreshold || 200;
+    if (!toBool(this.config?.incremental) || touchedCount > threshold || this.pendingRoots.size > threshold) {
+      this.needsFullScan = true;
+      this.pendingRoots.clear();
+    }
   }
 
   /**
    * 调度处理
    */
-  scheduleProcess() {
+  scheduleProcess(reason) {
     if (this.debounceTimer) return;
 
     if (this.config?.pauseTyping && this.isUserTyping) return;
+    this.lastProcessReason = reason || 'scheduled';
 
     this.debounceTimer = setTimeout(() => {
+      const startedAt = performance.now();
       this.debounceTimer = null;
       if (!this.root || !this.observer) return;
       // 暂停 observer 防止 processTree 修改 DOM 后触发循环
       this.observer.disconnect();
-      processTree(this.root, this.config);
-      this.observer.observe(this.root, { childList: true, subtree: true });
+      let processedRoots = 0;
+      try {
+        const useIncremental = toBool(this.config?.incremental);
+        if (useIncremental && !this.needsFullScan && this.pendingRoots.size > 0) {
+          const roots = Array.from(this.pendingRoots);
+          this.pendingRoots.clear();
+          for (const r of roots) {
+            if (r && r.isConnected) {
+              processTree(r, this.config);
+              processedRoots++;
+            }
+          }
+        } else {
+          processTree(this.root, this.config);
+          processedRoots = 1;
+          this.pendingRoots.clear();
+          this.needsFullScan = false;
+        }
+      } finally {
+        this.observer.observe(this.root, { childList: true, characterData: true, subtree: true });
+      }
+      if (debugLogsEnabled) {
+        const cost = (performance.now() - startedAt).toFixed(1);
+        console.log(`[${currentPluginName}] Preview process (${this.lastProcessReason}) roots=${processedRoots} incremental=${toBool(this.config?.incremental)} cost=${cost}ms`);
+      }
     }, this.config?.debounceMs || 5000);
   }
 
   /**
    * 启动输入处理器
    */
-  startTypingHandlers(config) {
+  startTypingHandlers() {
     const markTyping = () => {
-      if (!config?.pauseTyping) return;
+      if (!this.config?.pauseTyping) return;
       
       this.isUserTyping = true;
       
@@ -935,11 +1073,11 @@ class PreviewFormatter {
       
       this.typingIdleTimer = setTimeout(() => {
         this.isUserTyping = false;
-        this.scheduleProcess();
-      }, config?.typingIdleMs || 3000);
+        this.scheduleProcess('typing-idle');
+      }, this.config?.typingIdleMs || 3000);
     };
     
-    const types = ['keydown', 'keyup', 'input', 'beforeinput', 'compositionstart', 'compositionupdate', 'compositionend', 'paste'];
+    const types = ['input', 'beforeinput', 'compositionend', 'paste'];
     this.typingHandlers = types.map(t => {
       const h = (e) => {
         if (this.root && this.root.contains(e.target)) {
@@ -966,6 +1104,12 @@ class AutoFormatter {
     this.formatDebounceTimer = null;
     this.config = null;
     this.unsubscribe = null;
+    this.pendingBlockIds = new Set();
+    this.lastQueuedAt = new Map();
+    this.flushTimer = null;
+    this.isFlushing = false;
+    this.lastWriteAt = 0;
+    this.maxBatchSize = 20;
   }
 
   /**
@@ -974,12 +1118,13 @@ class AutoFormatter {
    */
   start(config) {
     if (this.unsubscribe) {
-      console.warn(`[${currentPluginName}] AutoFormatter already started`);
+      this.applyConfig(config);
       return;
     }
 
-    this.config = config;
+    this.config = { ...config };
     this.dirtyBlocks.clear();
+    this.pendingBlockIds.clear();
     this.currentBlockId = null;
     this.previousBlockId = null;
 
@@ -1007,14 +1152,27 @@ class AutoFormatter {
       clearTimeout(this.formatDebounceTimer);
       this.formatDebounceTimer = null;
     }
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
 
     this.dirtyBlocks.clear();
     this.formattingBlocks.clear();
+    this.pendingBlockIds.clear();
+    this.lastQueuedAt.clear();
     this.currentBlockId = null;
     this.previousBlockId = null;
     this.config = null;
+    this.isFlushing = false;
+    this.lastWriteAt = 0;
 
     console.log(`[${currentPluginName}] AutoFormatter stopped`);
+  }
+
+  applyConfig(config) {
+    this.config = { ...config };
+    this.scheduleFlush();
   }
 
   /**
@@ -1023,8 +1181,9 @@ class AutoFormatter {
   handleStateChange(ops) {
     ops.forEach(op => {
       const [type, path, newValue, oldValue] = op;
+      if (type !== 'set' || !Array.isArray(path)) return;
 
-      if (type === 'set' && path.length === 2 && path[0] === 'blocks') {
+      if (path.length === 2 && path[0] === 'blocks') {
         const blockId = path[1];
 
         if (!oldValue && newValue) {
@@ -1039,23 +1198,18 @@ class AutoFormatter {
         }
         else if (newValue && oldValue && newValue.text !== oldValue.text) {
           if (this.formattingBlocks.has(blockId)) return;
-          this.dirtyBlocks.add(blockId);
+          this.scheduleFormat(blockId);
         }
       }
 
-      if (type === 'set') {
-        const pathStr = path.join('.');
-        if (pathStr.includes('viewState') && pathStr.includes('selection')) {
-          if (path.length >= 6 && path[3] === 'viewState' && path[5] === 'selection') {
-            this.handleCursorMove(path[4]);
-          } else {
-            // DOM fallback
-            const sel = window.getSelection?.();
-            if (sel?.rangeCount) {
-              const bid = findBlockIdFromNode(sel.getRangeAt(0).commonAncestorContainer);
-              if (bid) this.handleCursorMove(bid);
-            }
-          }
+      if (path.length >= 6 && path[3] === 'viewState' && path[5] === 'selection') {
+        this.handleCursorMove(path[4]);
+      } else if (path.length >= 3 && path[path.length - 1] === 'selection' && path.includes('viewState')) {
+        // DOM fallback
+        const sel = window.getSelection?.();
+        if (sel?.rangeCount) {
+          const bid = findBlockIdFromNode(sel.getRangeAt(0).commonAncestorContainer);
+          if (bid) this.handleCursorMove(bid);
         }
       }
     });
@@ -1077,74 +1231,120 @@ class AutoFormatter {
    * 调度格式化操作
    */
   scheduleFormat(blockId) {
-    if (this.formatDebounceTimer) {
-      clearTimeout(this.formatDebounceTimer);
-    }
+    if (!blockId) return;
+    this.dirtyBlocks.add(blockId);
+    const now = Date.now();
+    const dedupeWindowMs = 300;
+    const lastAt = this.lastQueuedAt.get(blockId) || 0;
+    if (now - lastAt < dedupeWindowMs) return;
+    this.lastQueuedAt.set(blockId, now);
+    this.pendingBlockIds.add(blockId);
+    this.scheduleFlush();
+  }
 
-    this.formatDebounceTimer = setTimeout(() => {
-      this.formatBlock(blockId);
-      this.formatDebounceTimer = null;
-    }, 0); // 立即执行，不防抖，避免 OrcaNote 覆盖
+  scheduleFlush() {
+    if (this.flushTimer || this.isFlushing) return;
+    const delay = this.config?.autoBatchFlushMs ?? 16;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      this.flushQueuedBlocks();
+    }, Math.max(0, delay));
+  }
+
+  async flushQueuedBlocks() {
+    if (this.isFlushing) return;
+    this.isFlushing = true;
+    try {
+      const intervalMs = this.config?.autoMinWriteIntervalMs ?? 80;
+      const waitMs = intervalMs - (Date.now() - this.lastWriteAt);
+      if (waitMs > 0) await sleep(waitMs);
+
+      const candidates = Array.from(this.pendingBlockIds).slice(0, this.maxBatchSize);
+      if (!candidates.length) return;
+      candidates.forEach(id => this.pendingBlockIds.delete(id));
+
+      const updates = [];
+      const startedAt = performance.now();
+      for (const blockId of candidates) {
+        const update = await this.formatBlock(blockId);
+        if (update) updates.push(update);
+      }
+      if (updates.length) {
+        await this.updateBlocksContent(updates);
+        this.lastWriteAt = Date.now();
+      }
+      if (debugLogsEnabled) {
+        const cost = (performance.now() - startedAt).toFixed(1);
+        console.log(`[${currentPluginName}] Auto flush candidates=${candidates.length} updates=${updates.length} queue=${this.pendingBlockIds.size} cost=${cost}ms`);
+      }
+    } finally {
+      this.isFlushing = false;
+      if (this.pendingBlockIds.size > 0) {
+        this.scheduleFlush();
+      }
+    }
   }
 
   /**
    * 格式化块
    */
   async formatBlock(blockId) {
-    if (!this.dirtyBlocks.has(blockId)) return;
+    if (!this.dirtyBlocks.has(blockId)) return null;
 
     try {
       const block = orca.state.blocks[blockId];
       if (!block) {
         console.warn(`[${currentPluginName}] Block not found: ${blockId}`);
         this.dirtyBlocks.delete(blockId);
-        return;
+        return null;
       }
 
       // 如果内容为空，跳过格式化
       if (!block.text?.trim()) {
         this.dirtyBlocks.delete(blockId);
-        return;
+        return null;
       }
 
       // 使用 formatContentFragments 保留富文本格式（bold/italic 等）
       const newContent = formatContentFragments(block.content || [], this.config);
 
       // newContent 为 null 表示无变化
-      if (newContent) {
-        await this.updateBlockContent(blockId, newContent);
-      }
-
       this.dirtyBlocks.delete(blockId);
+      if (newContent) {
+        return { id: parseInt(blockId), content: newContent };
+      }
+      return null;
     } catch (error) {
       console.error(`[${currentPluginName}] Format block error:`, error);
+      return null;
     }
   }
 
   /**
    * 更新块内容（保留富文本格式）
    */
-  async updateBlockContent(blockId, newContent) {
+  async updateBlocksContent(updates) {
     try {
-      if (!orca.state.blocks?.[blockId]) return;
-
-      this.formattingBlocks.add(blockId);
+      if (!updates?.length) return;
+      const validUpdates = updates.filter(item => item && orca.state.blocks?.[String(item.id)]);
+      if (!validUpdates.length) return;
+      validUpdates.forEach(item => this.formattingBlocks.add(String(item.id)));
 
       await orca.commands.invokeEditorCommand(
         "core.editor.setBlocksContent",
         null,
-        [{ id: parseInt(blockId), content: newContent }],
+        validUpdates,
         false
       );
 
-      console.log(`[${currentPluginName}] Block ${blockId} content updated`);
+      console.log(`[${currentPluginName}] Updated ${validUpdates.length} block(s) content`);
 
       setTimeout(() => {
-        this.formattingBlocks.delete(blockId);
+        validUpdates.forEach(item => this.formattingBlocks.delete(String(item.id)));
       }, 500);
     } catch (error) {
       console.error(`[${currentPluginName}] Update block content error:`, error);
-      this.formattingBlocks.delete(blockId);
+      updates?.forEach(item => this.formattingBlocks.delete(String(item.id)));
     }
   }
 }

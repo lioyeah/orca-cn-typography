@@ -171,6 +171,24 @@ const settingsSchema = {
     defaultValue: "80",
     description: "两次 setBlocksContent 之间的最小间隔（毫秒）"
   },
+  autoWriteOnCommitOnly: {
+    label: "Auto 仅提交点写回 (高级)",
+    type: "boolean",
+    defaultValue: true,
+    description: "仅在 Enter、粘贴、IME 上屏结束、失焦或离开块时写回，避免输入中断"
+  },
+  autoCursorRecovery: {
+    label: "Auto 光标恢复 (高级)",
+    type: "boolean",
+    defaultValue: true,
+    description: "自动写回后尝试恢复选区，减少光标跳回与删除错位"
+  },
+  autoUndoSingleStep: {
+    label: "Auto 撤销单步 (高级)",
+    type: "boolean",
+    defaultValue: true,
+    description: "每次自动写回最多生成一条撤销记录，降低撤销栈污染"
+  },
   unitWhitelist: {
     label: "单位白名单 (高级)",
     type: "string",
@@ -286,6 +304,11 @@ function buildUnitRegex(csv){
 const defaultExceptionRe=/([0-9]+)\\s*(°C|°F|°|%)/g;
 const beforeFullWidth=/\s+([，。；：？！、)”’】》〕〉）])/g;
 const afterOpening=/([（［｛【《〔〈“‘])\s+/g;
+const fullwidthDigitsRe=/[０-９]/g;
+const hasCjkRe=/[\u2E80-\u9FFF]/;
+const repeatedPuncRe=/([。！？；，、])\1+/g;
+const mixedQeRe=/([？！]){2,}/g;
+const ellipsisAsciiRe=/\.{3,}/g;
 function shouldSkipTextNode(n,cfg){
   const el=n.parentElement; if(!el) return true;
   const skip=['CODE','PRE','KBD','SAMP','SCRIPT','STYLE','A'];
@@ -298,7 +321,10 @@ function shouldSkipTextNode(n,cfg){
   return false;
 }
 function applySpacing(s,cfg){
-  s=String(s).replace(reCjkThenLat,'$1 $2').replace(reLatThenCjk,'$1 $2');
+  s=String(s)
+    .replace(fullwidthDigitsRe, ch => String.fromCharCode(ch.charCodeAt(0) - 65248))
+    .replace(reCjkThenLat,'$1 $2')
+    .replace(reLatThenCjk,'$1 $2');
   if(cfg.enhanced){
     const uRe = cfg.unitRe || buildUnitRegex('');
     const exRe = cfg.exceptionRe || defaultExceptionRe;
@@ -311,14 +337,25 @@ function applyPunctuation(s,cfg){
   if(!cfg.enabled) return s;
   s=String(s);
   if(cfg.enhanced){ s=s.replace(beforeFullWidth,'$1').replace(afterOpening,'$1'); }
+  s=s
+    .replace(repeatedPuncRe,'$1')
+    .replace(mixedQeRe,(m)=>{
+      const hasQ = m.includes('？');
+      const hasE = m.includes('！');
+      if(hasQ && hasE) return m.indexOf('？') <= m.indexOf('！') ? '？！' : '！？';
+      return m[0];
+    })
+    .replace(ellipsisAsciiRe,'……');
+
+  const hasCjk = hasCjkRe.test(s);
   const style=(cfg.style||'mainland').toLowerCase();
-  if(style==='mainland'){
+  if(hasCjk && style==='mainland'){
     s=s.replace(/『([^』]+)』/g,'‘$1’').replace(/「([^「]+)」/g,'“$1”');
     s=s.replace(new RegExp('('+CJK_RANGE+')\\s*"([^"]+)"\\s*('+CJK_RANGE+')','g'),'$1“$2”$3');
     s=s.replace(new RegExp('('+CJK_RANGE+")\\s*'([^']+)'\\s*("+CJK_RANGE+')','g'),'$1‘$2’$3');
-  } else if(style==='tw-hk'){
+  } else if(hasCjk && style==='tw-hk'){
     s=s.replace(/“([^”]+)”/g,'「$1」').replace(/‘([^’]+)’/g,'『$1』');
-  } else if(style==='tech'){
+  } else if(hasCjk && style==='tech'){
     s=s.replace(/『([^』]+)』/g,'‘$1’').replace(/「([^「]+)」/g,'“$1”');
   }
   for(const r of (cfg.customPunc||[])){ try{ s=s.replace(r.p,r.rep);}catch(_){}}
@@ -649,6 +686,9 @@ function applyCustomStyles(savedSettings) {
   const autoMinWriteIntervalMsStr = getSettingValue('autoMinWriteIntervalMs', savedSettings);
   const autoMinWriteIntervalMsParsed = parseInt(String(autoMinWriteIntervalMsStr||'80'),10);
   const autoMinWriteIntervalMs = isNaN(autoMinWriteIntervalMsParsed) ? 80 : Math.max(0, autoMinWriteIntervalMsParsed);
+  const autoWriteOnCommitOnly = toBool(getSettingValue('autoWriteOnCommitOnly', savedSettings));
+  const autoCursorRecovery = toBool(getSettingValue('autoCursorRecovery', savedSettings));
+  const autoUndoSingleStep = toBool(getSettingValue('autoUndoSingleStep', savedSettings));
 
   applyBaseFontSizeSetting(baseFontSize);
   applyGlobalLineHeightSetting(globalLineHeight);
@@ -703,7 +743,10 @@ function applyCustomStyles(savedSettings) {
         puncStyle: punctuationStyle,
         customPunc: compiledPuncRules,
         autoBatchFlushMs,
-        autoMinWriteIntervalMs
+        autoMinWriteIntervalMs,
+        autoWriteOnCommitOnly,
+        autoCursorRecovery,
+        autoUndoSingleStep
       });
     } else {
       if (autoFormatter) {
@@ -1101,7 +1144,6 @@ class AutoFormatter {
     this.formattingBlocks = new Set(); // 正在格式化的块 ID（避免循环格式化）
     this.currentBlockId = null;   // 当前光标所在的块 ID
     this.previousBlockId = null;  // 上一个光标所在的块 ID
-    this.formatDebounceTimer = null;
     this.config = null;
     this.unsubscribe = null;
     this.pendingBlockIds = new Set();
@@ -1110,6 +1152,16 @@ class AutoFormatter {
     this.isFlushing = false;
     this.lastWriteAt = 0;
     this.maxBatchSize = 20;
+    this.commitHandlers = [];
+    this.isComposing = false;
+    this.flushReason = "unknown";
+    this.metrics = {
+      cursor_restore_success_count: 0,
+      cursor_restore_fail_count: 0,
+      cursor_jump_count: 0,
+      auto_flush_count: 0,
+      undo_entries_per_auto_flush: []
+    };
   }
 
   /**
@@ -1127,12 +1179,15 @@ class AutoFormatter {
     this.pendingBlockIds.clear();
     this.currentBlockId = null;
     this.previousBlockId = null;
+    this.isComposing = false;
+    this.flushReason = "start";
 
     // 订阅状态变化
     if (window.Valtio && typeof window.Valtio.subscribe === 'function') {
       this.unsubscribe = window.Valtio.subscribe(orca.state, (ops) => {
         this.handleStateChange(ops);
       });
+      this.startCommitHandlers();
       console.log(`[${currentPluginName}] AutoFormatter started`);
     } else {
       console.error(`[${currentPluginName}] AutoFormatter: Valtio.subscribe not available`);
@@ -1147,15 +1202,11 @@ class AutoFormatter {
       this.unsubscribe();
       this.unsubscribe = null;
     }
-
-    if (this.formatDebounceTimer) {
-      clearTimeout(this.formatDebounceTimer);
-      this.formatDebounceTimer = null;
-    }
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
+    this.stopCommitHandlers();
 
     this.dirtyBlocks.clear();
     this.formattingBlocks.clear();
@@ -1166,13 +1217,17 @@ class AutoFormatter {
     this.config = null;
     this.isFlushing = false;
     this.lastWriteAt = 0;
+    this.isComposing = false;
+    this.flushReason = "stopped";
 
     console.log(`[${currentPluginName}] AutoFormatter stopped`);
   }
 
   applyConfig(config) {
     this.config = { ...config };
-    this.scheduleFlush();
+    if (!toBool(this.config?.autoWriteOnCommitOnly)) {
+      this.scheduleFlush("config-change");
+    }
   }
 
   /**
@@ -1184,21 +1239,26 @@ class AutoFormatter {
       if (type !== 'set' || !Array.isArray(path)) return;
 
       if (path.length === 2 && path[0] === 'blocks') {
-        const blockId = path[1];
+        const blockId = String(path[1]);
 
         if (!oldValue && newValue) {
           if (this.dirtyBlocks.size > 0) {
             const blocksToFormat = Array.from(this.dirtyBlocks);
             setTimeout(() => {
               blocksToFormat.forEach(dirtyBlockId => {
-                if (dirtyBlockId !== blockId) this.scheduleFormat(dirtyBlockId);
+                if (dirtyBlockId !== blockId) this.enqueueDirtyBlock(dirtyBlockId, "block-created");
               });
+              if (!toBool(this.config?.autoWriteOnCommitOnly)) this.scheduleFlush("block-created");
             }, 150);
           }
         }
         else if (newValue && oldValue && newValue.text !== oldValue.text) {
           if (this.formattingBlocks.has(blockId)) return;
-          this.scheduleFormat(blockId);
+          this.markDirty(blockId);
+          if (!toBool(this.config?.autoWriteOnCommitOnly)) {
+            this.enqueueDirtyBlock(blockId, "state-change");
+            this.scheduleFlush("state-change");
+          }
         }
       }
 
@@ -1219,32 +1279,109 @@ class AutoFormatter {
    * 处理光标移动到新块
    */
   handleCursorMove(newBlockId) {
-    if (!newBlockId || newBlockId === this.currentBlockId) return;
+    const nextId = String(newBlockId || "");
+    if (!nextId || nextId === this.currentBlockId) return;
     this.previousBlockId = this.currentBlockId;
-    this.currentBlockId = newBlockId;
+    this.currentBlockId = nextId;
     if (this.previousBlockId && this.dirtyBlocks.has(this.previousBlockId)) {
-      this.scheduleFormat(this.previousBlockId);
+      this.enqueueDirtyBlock(this.previousBlockId, "leave-block");
+      this.scheduleFlush("leave-block");
     }
   }
 
-  /**
-   * 调度格式化操作
-   */
-  scheduleFormat(blockId) {
+  markDirty(blockId) {
     if (!blockId) return;
-    this.dirtyBlocks.add(blockId);
-    const now = Date.now();
-    const dedupeWindowMs = 300;
-    const lastAt = this.lastQueuedAt.get(blockId) || 0;
-    if (now - lastAt < dedupeWindowMs) return;
-    this.lastQueuedAt.set(blockId, now);
-    this.pendingBlockIds.add(blockId);
-    this.scheduleFlush();
+    this.dirtyBlocks.add(String(blockId));
   }
 
-  scheduleFlush() {
+  enqueueDirtyBlock(blockId, reason) {
+    if (!blockId) return;
+    const id = String(blockId);
+    if (!this.dirtyBlocks.has(id)) return;
+    const now = Date.now();
+    const dedupeWindowMs = 300;
+    const lastAt = this.lastQueuedAt.get(id) || 0;
+    if (now - lastAt < dedupeWindowMs) return;
+    this.lastQueuedAt.set(id, now);
+    this.pendingBlockIds.add(id);
+    if (debugLogsEnabled) {
+      console.log(`[${currentPluginName}] Auto enqueue block=${id} reason=${reason || "unknown"} dirty=${this.dirtyBlocks.size} pending=${this.pendingBlockIds.size}`);
+    }
+  }
+
+  resolveBlockIdFromEventTarget(target) {
+    const bid = findBlockIdFromNode(target);
+    if (bid) return String(bid);
+    const sel = window.getSelection?.();
+    if (sel?.rangeCount) {
+      const b2 = findBlockIdFromNode(sel.getRangeAt(0).commonAncestorContainer);
+      if (b2) return String(b2);
+    }
+    return this.currentBlockId ? String(this.currentBlockId) : null;
+  }
+
+  startCommitHandlers() {
+    const entries = [
+      {
+        t: "compositionstart",
+        h: () => {
+          this.isComposing = true;
+        }
+      },
+      {
+        t: "compositionend",
+        h: (e) => {
+          this.isComposing = false;
+          const bid = this.resolveBlockIdFromEventTarget(e?.target);
+          if (bid) this.markDirty(bid);
+          this.enqueueDirtyBlock(bid, "compositionend");
+          this.scheduleFlush("compositionend");
+        }
+      },
+      {
+        t: "paste",
+        h: (e) => {
+          const bid = this.resolveBlockIdFromEventTarget(e?.target);
+          if (bid) this.markDirty(bid);
+          this.enqueueDirtyBlock(bid, "paste");
+          this.scheduleFlush("paste");
+        }
+      },
+      {
+        t: "focusout",
+        h: (e) => {
+          const bid = this.resolveBlockIdFromEventTarget(e?.target);
+          if (bid && this.dirtyBlocks.has(bid)) {
+            this.enqueueDirtyBlock(bid, "blur");
+            this.scheduleFlush("blur");
+          }
+        }
+      },
+      {
+        t: "keydown",
+        h: (e) => {
+          if (e?.key !== "Enter") return;
+          const bid = this.resolveBlockIdFromEventTarget(e?.target);
+          if (bid) this.markDirty(bid);
+          this.enqueueDirtyBlock(bid, "enter");
+          this.scheduleFlush("enter");
+        }
+      }
+    ];
+    entries.forEach(item => document.addEventListener(item.t, item.h, true));
+    this.commitHandlers = entries;
+  }
+
+  stopCommitHandlers() {
+    if (!this.commitHandlers?.length) return;
+    this.commitHandlers.forEach(item => document.removeEventListener(item.t, item.h, true));
+    this.commitHandlers = [];
+  }
+
+  scheduleFlush(reason) {
     if (this.flushTimer || this.isFlushing) return;
     const delay = this.config?.autoBatchFlushMs ?? 16;
+    this.flushReason = reason || this.flushReason || "scheduled";
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
       this.flushQueuedBlocks();
@@ -1255,6 +1392,7 @@ class AutoFormatter {
     if (this.isFlushing) return;
     this.isFlushing = true;
     try {
+      if (toBool(this.config?.autoWriteOnCommitOnly) && this.isComposing) return;
       const intervalMs = this.config?.autoMinWriteIntervalMs ?? 80;
       const waitMs = intervalMs - (Date.now() - this.lastWriteAt);
       if (waitMs > 0) await sleep(waitMs);
@@ -1270,17 +1408,24 @@ class AutoFormatter {
         if (update) updates.push(update);
       }
       if (updates.length) {
-        await this.updateBlocksContent(updates);
+        await this.updateBlocksContent(updates, this.flushReason);
         this.lastWriteAt = Date.now();
       }
+      this.metrics.auto_flush_count++;
       if (debugLogsEnabled) {
         const cost = (performance.now() - startedAt).toFixed(1);
-        console.log(`[${currentPluginName}] Auto flush candidates=${candidates.length} updates=${updates.length} queue=${this.pendingBlockIds.size} cost=${cost}ms`);
+        const success = this.metrics.cursor_restore_success_count;
+        const fail = this.metrics.cursor_restore_fail_count;
+        const rate = success + fail > 0 ? ((success * 100) / (success + fail)).toFixed(1) : "100.0";
+        const undoStatLen = this.metrics.undo_entries_per_auto_flush.length;
+        const undoPerFlush = undoStatLen > 0 ? this.metrics.undo_entries_per_auto_flush[undoStatLen - 1] : 0;
+        console.log(`[${currentPluginName}] Auto flush reason=${this.flushReason} candidates=${candidates.length} updates=${updates.length} queue=${this.pendingBlockIds.size} cost=${cost}ms cursor_restore_success_rate=${rate}% cursor_jump_count=${this.metrics.cursor_jump_count} undo_entries_per_auto_flush=${undoPerFlush}`);
       }
     } finally {
       this.isFlushing = false;
+      this.flushReason = "scheduled";
       if (this.pendingBlockIds.size > 0) {
-        this.scheduleFlush();
+        this.scheduleFlush("pending-remain");
       }
     }
   }
@@ -1289,19 +1434,23 @@ class AutoFormatter {
    * 格式化块
    */
   async formatBlock(blockId) {
-    if (!this.dirtyBlocks.has(blockId)) return null;
+    const id = String(blockId);
+    if (!this.dirtyBlocks.has(id)) return null;
 
     try {
-      const block = orca.state.blocks[blockId];
+      if (toBool(this.config?.autoWriteOnCommitOnly) && this.currentBlockId === id && this.flushReason === "state-change") {
+        return null;
+      }
+      const block = orca.state.blocks[id];
       if (!block) {
-        console.warn(`[${currentPluginName}] Block not found: ${blockId}`);
-        this.dirtyBlocks.delete(blockId);
+        console.warn(`[${currentPluginName}] Block not found: ${id}`);
+        this.dirtyBlocks.delete(id);
         return null;
       }
 
       // 如果内容为空，跳过格式化
       if (!block.text?.trim()) {
-        this.dirtyBlocks.delete(blockId);
+        this.dirtyBlocks.delete(id);
         return null;
       }
 
@@ -1309,9 +1458,13 @@ class AutoFormatter {
       const newContent = formatContentFragments(block.content || [], this.config);
 
       // newContent 为 null 表示无变化
-      this.dirtyBlocks.delete(blockId);
+      this.dirtyBlocks.delete(id);
       if (newContent) {
-        return { id: parseInt(blockId), content: newContent };
+        return {
+          id: parseInt(id, 10),
+          content: newContent,
+          oldContent: Array.isArray(block.content) ? block.content.map(f => ({ ...f })) : []
+        };
       }
       return null;
     } catch (error) {
@@ -1320,22 +1473,144 @@ class AutoFormatter {
     }
   }
 
+  getCursorSnapshot() {
+    try {
+      const selection = window.getSelection?.();
+      if (!selection) return null;
+      if (orca?.utils?.getCursorDataFromSelection) {
+        const cursor = orca.utils.getCursorDataFromSelection(selection);
+        return cursor ? JSON.parse(JSON.stringify(cursor)) : null;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  mapOffsetByDiff(oldText, newText, offset) {
+    const oldStr = String(oldText || "");
+    const newStr = String(newText || "");
+    const oldLen = oldStr.length;
+    const newLen = newStr.length;
+    const safeOffset = Math.max(0, Math.min(oldLen, Number(offset) || 0));
+    if (oldStr === newStr) return Math.max(0, Math.min(newLen, safeOffset));
+
+    let prefix = 0;
+    while (prefix < oldLen && prefix < newLen && oldStr[prefix] === newStr[prefix]) prefix++;
+
+    let suffix = 0;
+    while (
+      suffix < oldLen - prefix &&
+      suffix < newLen - prefix &&
+      oldStr[oldLen - 1 - suffix] === newStr[newLen - 1 - suffix]
+    ) {
+      suffix++;
+    }
+
+    if (safeOffset <= prefix) return safeOffset;
+    const oldTailStart = oldLen - suffix;
+    const newTailStart = newLen - suffix;
+    if (safeOffset >= oldTailStart) {
+      const fromTail = oldLen - safeOffset;
+      return Math.max(0, Math.min(newLen, newLen - fromTail));
+    }
+    return Math.max(0, Math.min(newLen, newTailStart));
+  }
+
+  remapCursorNode(nodeData, updatesMap) {
+    if (!nodeData || typeof nodeData !== "object") return nodeData;
+    const blockKey = String(nodeData.blockId ?? "");
+    const update = updatesMap.get(blockKey);
+    if (!update) return { ...nodeData };
+
+    const mapped = { ...nodeData };
+    const oldContent = Array.isArray(update.oldContent) ? update.oldContent : [];
+    const newContent = Array.isArray(update.content) ? update.content : [];
+    const idx = Number(mapped.index);
+    if (!Number.isInteger(idx) || idx < 0) return mapped;
+
+    if (idx >= newContent.length) {
+      mapped.index = Math.max(0, newContent.length - 1);
+      mapped.offset = 0;
+      return mapped;
+    }
+
+    const oldFrag = oldContent[idx];
+    const newFrag = newContent[idx];
+    if (oldFrag?.t === "t" && newFrag?.t === "t" && typeof oldFrag.v === "string" && typeof newFrag.v === "string") {
+      const oldOffset = Number(mapped.offset) || 0;
+      mapped.offset = this.mapOffsetByDiff(oldFrag.v, newFrag.v, oldOffset);
+    } else {
+      const len = typeof newFrag?.v === "string" ? newFrag.v.length : 0;
+      mapped.offset = Math.max(0, Math.min(len, Number(mapped.offset) || 0));
+    }
+    return mapped;
+  }
+
+  remapCursorData(cursorData, updatesMap) {
+    if (!cursorData) return null;
+    const remapped = JSON.parse(JSON.stringify(cursorData));
+    remapped.anchor = this.remapCursorNode(remapped.anchor, updatesMap);
+    remapped.focus = this.remapCursorNode(remapped.focus, updatesMap);
+    return remapped;
+  }
+
+  async runSetBlocksContentWithUndoPolicy(cursorData, payload) {
+    const invoke = async () => {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setBlocksContent",
+        toBool(this.config?.autoCursorRecovery) ? cursorData : null,
+        payload,
+        toBool(this.config?.autoCursorRecovery)
+      );
+    };
+
+    const expectedUndoEntries = toBool(this.config?.autoUndoSingleStep) ? 1 : payload.length;
+    this.metrics.undo_entries_per_auto_flush.push(expectedUndoEntries);
+    if (this.metrics.undo_entries_per_auto_flush.length > 200) {
+      this.metrics.undo_entries_per_auto_flush.shift();
+    }
+
+    if (toBool(this.config?.autoUndoSingleStep) && orca?.commands?.invokeGroup) {
+      await orca.commands.invokeGroup(async () => {
+        await invoke();
+      }, { undoable: true, topGroup: true });
+    } else {
+      await invoke();
+    }
+  }
+
   /**
    * 更新块内容（保留富文本格式）
    */
-  async updateBlocksContent(updates) {
+  async updateBlocksContent(updates, reason) {
     try {
       if (!updates?.length) return;
-      const validUpdates = updates.filter(item => item && orca.state.blocks?.[String(item.id)]);
+      const validUpdates = updates.filter(item => item && orca.state.blocks?.[String(item.id)] && Array.isArray(item.content));
       if (!validUpdates.length) return;
       validUpdates.forEach(item => this.formattingBlocks.add(String(item.id)));
+      const payload = validUpdates.map(item => ({ id: item.id, content: item.content }));
+      const updatesMap = new Map(validUpdates.map(item => [String(item.id), { content: item.content, oldContent: item.oldContent }]));
 
-      await orca.commands.invokeEditorCommand(
-        "core.editor.setBlocksContent",
-        null,
-        validUpdates,
-        false
-      );
+      const beforeCursor = toBool(this.config?.autoCursorRecovery) ? this.getCursorSnapshot() : null;
+      const remappedCursor = beforeCursor ? this.remapCursorData(beforeCursor, updatesMap) : null;
+
+      await this.runSetBlocksContentWithUndoPolicy(beforeCursor, payload);
+
+      if (toBool(this.config?.autoCursorRecovery) && remappedCursor && orca?.utils?.setSelectionFromCursorData) {
+        try {
+          await orca.utils.setSelectionFromCursorData(remappedCursor);
+          this.metrics.cursor_restore_success_count++;
+        } catch (_) {
+          this.metrics.cursor_restore_fail_count++;
+        }
+      }
+
+      if (beforeCursor && remappedCursor) {
+        const beforeAnchorBlock = String(beforeCursor.anchor?.blockId ?? "");
+        const afterAnchorBlock = String(remappedCursor.anchor?.blockId ?? "");
+        if (beforeAnchorBlock && afterAnchorBlock && beforeAnchorBlock !== afterAnchorBlock) {
+          this.metrics.cursor_jump_count++;
+        }
+      }
 
       console.log(`[${currentPluginName}] Updated ${validUpdates.length} block(s) content`);
 

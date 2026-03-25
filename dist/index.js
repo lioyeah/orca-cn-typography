@@ -147,6 +147,48 @@ const settingsSchema = {
     defaultValue: "3000",
     description: "停止输入后延迟多少毫秒再应用排版（单位：毫秒）"
   },
+  previewIncremental: {
+    label: "预览增量处理 (高级)",
+    type: "boolean",
+    defaultValue: true,
+    description: "仅处理发生变化的 DOM 子树；大幅降低预览模式全量扫描开销"
+  },
+  previewFullScanThreshold: {
+    label: "   ↳ 预览全量回退阈值",
+    type: "string",
+    defaultValue: "200",
+    description: "单轮变更节点数超过该值时执行全量扫描（单位：节点数）"
+  },
+  autoBatchFlushMs: {
+    label: "Auto 批处理间隔 (高级)",
+    type: "string",
+    defaultValue: "16",
+    description: "Auto 模式批量处理脏块的间隔（毫秒）"
+  },
+  autoMinWriteIntervalMs: {
+    label: "Auto 最小写回间隔 (高级)",
+    type: "string",
+    defaultValue: "80",
+    description: "两次 setBlocksContent 之间的最小间隔（毫秒）"
+  },
+  autoWriteOnCommitOnly: {
+    label: "Auto 仅提交点写回 (高级)",
+    type: "boolean",
+    defaultValue: true,
+    description: "仅在 Enter、粘贴、IME 上屏结束、失焦或离开块时写回，避免输入中断"
+  },
+  autoCursorRecovery: {
+    label: "Auto 光标恢复 (高级)",
+    type: "boolean",
+    defaultValue: true,
+    description: "自动写回后尝试恢复选区，减少光标跳回与删除错位"
+  },
+  autoUndoSingleStep: {
+    label: "Auto 撤销单步 (高级)",
+    type: "boolean",
+    defaultValue: true,
+    description: "每次自动写回最多生成一条撤销记录，降低撤销栈污染"
+  },
   unitWhitelist: {
     label: "单位白名单 (高级)",
     type: "string",
@@ -188,6 +230,10 @@ function getSettingValue(settingKey, savedSettings) {
   // 如果 schema 中也没有默认值（理论上我们都应该定义），则对于字符串类型返回空字符串
   // 对于其他类型（如 boolean 或 number, 如果以后用到），可能需要不同的后备逻辑
   return "";
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, ms || 0)));
 }
 
 /**
@@ -258,6 +304,11 @@ function buildUnitRegex(csv){
 const defaultExceptionRe=/([0-9]+)\\s*(°C|°F|°|%)/g;
 const beforeFullWidth=/\s+([，。；：？！、)”’】》〕〉）])/g;
 const afterOpening=/([（［｛【《〔〈“‘])\s+/g;
+const fullwidthDigitsRe=/[０-９]/g;
+const hasCjkRe=/[\u2E80-\u9FFF]/;
+const repeatedPuncRe=/([。！？；，、])\1+/g;
+const mixedQeRe=/([？！]){2,}/g;
+const ellipsisAsciiRe=/\.{3,}/g;
 function shouldSkipTextNode(n,cfg){
   const el=n.parentElement; if(!el) return true;
   const skip=['CODE','PRE','KBD','SAMP','SCRIPT','STYLE','A'];
@@ -270,7 +321,10 @@ function shouldSkipTextNode(n,cfg){
   return false;
 }
 function applySpacing(s,cfg){
-  s=String(s).replace(reCjkThenLat,'$1 $2').replace(reLatThenCjk,'$1 $2');
+  s=String(s)
+    .replace(fullwidthDigitsRe, ch => String.fromCharCode(ch.charCodeAt(0) - 65248))
+    .replace(reCjkThenLat,'$1 $2')
+    .replace(reLatThenCjk,'$1 $2');
   if(cfg.enhanced){
     const uRe = cfg.unitRe || buildUnitRegex('');
     const exRe = cfg.exceptionRe || defaultExceptionRe;
@@ -283,14 +337,25 @@ function applyPunctuation(s,cfg){
   if(!cfg.enabled) return s;
   s=String(s);
   if(cfg.enhanced){ s=s.replace(beforeFullWidth,'$1').replace(afterOpening,'$1'); }
+  s=s
+    .replace(repeatedPuncRe,'$1')
+    .replace(mixedQeRe,(m)=>{
+      const hasQ = m.includes('？');
+      const hasE = m.includes('！');
+      if(hasQ && hasE) return m.indexOf('？') <= m.indexOf('！') ? '？！' : '！？';
+      return m[0];
+    })
+    .replace(ellipsisAsciiRe,'……');
+
+  const hasCjk = hasCjkRe.test(s);
   const style=(cfg.style||'mainland').toLowerCase();
-  if(style==='mainland'){
+  if(hasCjk && style==='mainland'){
     s=s.replace(/『([^』]+)』/g,'‘$1’').replace(/「([^「]+)」/g,'“$1”');
     s=s.replace(new RegExp('('+CJK_RANGE+')\\s*"([^"]+)"\\s*('+CJK_RANGE+')','g'),'$1“$2”$3');
     s=s.replace(new RegExp('('+CJK_RANGE+")\\s*'([^']+)'\\s*("+CJK_RANGE+')','g'),'$1‘$2’$3');
-  } else if(style==='tw-hk'){
+  } else if(hasCjk && style==='tw-hk'){
     s=s.replace(/“([^”]+)”/g,'「$1」').replace(/‘([^’]+)’/g,'『$1』');
-  } else if(style==='tech'){
+  } else if(hasCjk && style==='tech'){
     s=s.replace(/『([^』]+)』/g,'‘$1’').replace(/「([^「]+)」/g,'“$1”');
   }
   for(const r of (cfg.customPunc||[])){ try{ s=s.replace(r.p,r.rep);}catch(_){}}
@@ -611,6 +676,19 @@ function applyCustomStyles(savedSettings) {
   const typingIdleMsStr = getSettingValue('typingIdleMs', savedSettings);
   const typingIdleMsParsed = parseInt(String(typingIdleMsStr||'3000'),10);
   const typingIdleMs = isNaN(typingIdleMsParsed) ? 3000 : Math.max(0, typingIdleMsParsed);
+  const previewIncremental = toBool(getSettingValue('previewIncremental', savedSettings));
+  const previewFullScanThresholdStr = getSettingValue('previewFullScanThreshold', savedSettings);
+  const previewFullScanThresholdParsed = parseInt(String(previewFullScanThresholdStr||'200'),10);
+  const previewFullScanThreshold = isNaN(previewFullScanThresholdParsed) ? 200 : Math.max(1, previewFullScanThresholdParsed);
+  const autoBatchFlushMsStr = getSettingValue('autoBatchFlushMs', savedSettings);
+  const autoBatchFlushMsParsed = parseInt(String(autoBatchFlushMsStr||'16'),10);
+  const autoBatchFlushMs = isNaN(autoBatchFlushMsParsed) ? 16 : Math.max(0, autoBatchFlushMsParsed);
+  const autoMinWriteIntervalMsStr = getSettingValue('autoMinWriteIntervalMs', savedSettings);
+  const autoMinWriteIntervalMsParsed = parseInt(String(autoMinWriteIntervalMsStr||'80'),10);
+  const autoMinWriteIntervalMs = isNaN(autoMinWriteIntervalMsParsed) ? 80 : Math.max(0, autoMinWriteIntervalMsParsed);
+  const autoWriteOnCommitOnly = toBool(getSettingValue('autoWriteOnCommitOnly', savedSettings));
+  const autoCursorRecovery = toBool(getSettingValue('autoCursorRecovery', savedSettings));
+  const autoUndoSingleStep = toBool(getSettingValue('autoUndoSingleStep', savedSettings));
 
   applyBaseFontSizeSetting(baseFontSize);
   applyGlobalLineHeightSetting(globalLineHeight);
@@ -618,6 +696,7 @@ function applyCustomStyles(savedSettings) {
   
   // 根据 formattingMode 决定使用哪种格式化模式
   if (formattingMode === 'preview') {
+    if (autoFormatter) autoFormatter.stop();
     // Preview Mode: 显示层格式化
     if (enableAutoProcessing && (enableAutoSpacing || enablePunctuationPreview)) {
       // 使用 PreviewFormatter
@@ -637,7 +716,9 @@ function applyCustomStyles(savedSettings) {
         debounceMs,
         highlight: false,
         pauseTyping,
-        typingIdleMs
+        typingIdleMs,
+        incremental: previewIncremental,
+        fullScanThreshold: previewFullScanThreshold
       });
     } else {
       if (previewFormatter) {
@@ -645,6 +726,7 @@ function applyCustomStyles(savedSettings) {
       }
     }
   } else if (formattingMode === 'auto') {
+    if (previewFormatter) previewFormatter.stop();
     // Auto Mode: 编辑层格式化
     if (enableAutoProcessing && (enableAutoSpacing || enablePunctuationPreview)) {
       // 使用 AutoFormatter
@@ -659,13 +741,21 @@ function applyCustomStyles(savedSettings) {
         puncEnabled: enablePunctuationPreview,
         puncEnhanced: enablePunctuationEnhanced,
         puncStyle: punctuationStyle,
-        customPunc: compiledPuncRules
+        customPunc: compiledPuncRules,
+        autoBatchFlushMs,
+        autoMinWriteIntervalMs,
+        autoWriteOnCommitOnly,
+        autoCursorRecovery,
+        autoUndoSingleStep
       });
     } else {
       if (autoFormatter) {
         autoFormatter.stop();
       }
     }
+  } else {
+    if (previewFormatter) previewFormatter.stop();
+    if (autoFormatter) autoFormatter.stop();
   }
   if(hardFormatToClipboard && !hardFormatOnceUsed){
     exportHardFormatToClipboard({
@@ -839,6 +929,9 @@ class PreviewFormatter {
     this.isUserTyping = false;
     this.typingIdleTimer = null;
     this.config = null;
+    this.pendingRoots = new Set();
+    this.needsFullScan = false;
+    this.lastProcessReason = 'init';
   }
 
   /**
@@ -847,23 +940,24 @@ class PreviewFormatter {
    */
   start(config) {
     if (this.observer) {
-      console.warn(`[${currentPluginName}] PreviewFormatter already started`);
+      this.applyConfig(config);
       return;
     }
 
-    this.config = config;
-    this.root = getTransformRoot(config.rootSelector);
+    this.config = { ...config };
+    this.root = getTransformRoot(this.config.rootSelector);
 
-    processTree(this.root, config);
+    processTree(this.root, this.config);
     
     // 启动 MutationObserver
-    this.observer = new MutationObserver(() => {
-      this.scheduleProcess();
+    this.observer = new MutationObserver((mutations) => {
+      this.handleMutations(mutations);
+      this.scheduleProcess('mutation');
     });
-    this.observer.observe(this.root, { childList: true, subtree: true });
+    this.observer.observe(this.root, { childList: true, characterData: true, subtree: true });
     
     // 启动输入监听
-    this.startTypingHandlers(config);
+    this.startTypingHandlers();
     
     console.log(`[${currentPluginName}] PreviewFormatter started`);
   }
@@ -897,34 +991,121 @@ class PreviewFormatter {
     }
     
     this.config = null;
+    this.pendingRoots.clear();
+    this.needsFullScan = false;
+    this.lastProcessReason = 'stopped';
     
     console.log(`[${currentPluginName}] PreviewFormatter stopped`);
+  }
+
+  applyConfig(config) {
+    const nextConfig = { ...config };
+    const nextRoot = getTransformRoot(nextConfig.rootSelector);
+    const rootChanged = this.root !== nextRoot;
+
+    this.config = nextConfig;
+
+    if (rootChanged && this.observer) {
+      this.observer.disconnect();
+      this.root = nextRoot;
+      this.pendingRoots.clear();
+      this.needsFullScan = true;
+      this.observer.observe(this.root, { childList: true, characterData: true, subtree: true });
+      this.scheduleProcess('root-change');
+    }
+
+    if (!rootChanged && this.root) {
+      this.scheduleProcess('config-change');
+    }
+  }
+
+  handleMutations(mutations) {
+    if (!this.root || !mutations?.length) return;
+
+    let touchedCount = 0;
+    for (const m of mutations) {
+      if (m.type === 'characterData') {
+        const parent = m.target?.parentElement;
+        if (parent && this.root.contains(parent)) {
+          this.pendingRoots.add(parent);
+          touchedCount++;
+        }
+      }
+
+      if (m.type === 'childList') {
+        if (m.target?.nodeType === Node.ELEMENT_NODE && this.root.contains(m.target)) {
+          this.pendingRoots.add(m.target);
+          touchedCount++;
+        }
+
+        if (m.addedNodes?.length) {
+          m.addedNodes.forEach(n => {
+            const el = n.nodeType === Node.TEXT_NODE ? n.parentElement : n;
+            if (el && el.nodeType === Node.ELEMENT_NODE && this.root.contains(el)) {
+              this.pendingRoots.add(el);
+              touchedCount++;
+            }
+          });
+        }
+      }
+    }
+
+    const threshold = this.config?.fullScanThreshold || 200;
+    if (!toBool(this.config?.incremental) || touchedCount > threshold || this.pendingRoots.size > threshold) {
+      this.needsFullScan = true;
+      this.pendingRoots.clear();
+    }
   }
 
   /**
    * 调度处理
    */
-  scheduleProcess() {
+  scheduleProcess(reason) {
     if (this.debounceTimer) return;
 
     if (this.config?.pauseTyping && this.isUserTyping) return;
+    this.lastProcessReason = reason || 'scheduled';
 
     this.debounceTimer = setTimeout(() => {
+      const startedAt = performance.now();
       this.debounceTimer = null;
       if (!this.root || !this.observer) return;
       // 暂停 observer 防止 processTree 修改 DOM 后触发循环
       this.observer.disconnect();
-      processTree(this.root, this.config);
-      this.observer.observe(this.root, { childList: true, subtree: true });
+      let processedRoots = 0;
+      try {
+        const useIncremental = toBool(this.config?.incremental);
+        if (useIncremental && !this.needsFullScan && this.pendingRoots.size > 0) {
+          const roots = Array.from(this.pendingRoots);
+          this.pendingRoots.clear();
+          for (const r of roots) {
+            if (r && r.isConnected) {
+              processTree(r, this.config);
+              processedRoots++;
+            }
+          }
+        } else {
+          processTree(this.root, this.config);
+          processedRoots = 1;
+          this.pendingRoots.clear();
+          this.needsFullScan = false;
+        }
+      } finally {
+        this.observer.observe(this.root, { childList: true, characterData: true, subtree: true });
+      }
+      if (debugLogsEnabled) {
+        const cost = (performance.now() - startedAt).toFixed(1);
+        console.log(`[${currentPluginName}] Preview process (${this.lastProcessReason}) roots=${processedRoots} incremental=${toBool(this.config?.incremental)} cost=${cost}ms`);
+      }
     }, this.config?.debounceMs || 5000);
   }
 
   /**
    * 启动输入处理器
    */
-  startTypingHandlers(config) {
+  startTypingHandlers() {
     const markTyping = () => {
-      if (!config?.pauseTyping) return;
+      if (!this.config?.pauseTyping) return;
       
       this.isUserTyping = true;
       
@@ -935,11 +1116,11 @@ class PreviewFormatter {
       
       this.typingIdleTimer = setTimeout(() => {
         this.isUserTyping = false;
-        this.scheduleProcess();
-      }, config?.typingIdleMs || 3000);
+        this.scheduleProcess('typing-idle');
+      }, this.config?.typingIdleMs || 3000);
     };
     
-    const types = ['keydown', 'keyup', 'input', 'beforeinput', 'compositionstart', 'compositionupdate', 'compositionend', 'paste'];
+    const types = ['input', 'beforeinput', 'compositionend', 'paste'];
     this.typingHandlers = types.map(t => {
       const h = (e) => {
         if (this.root && this.root.contains(e.target)) {
@@ -963,9 +1144,24 @@ class AutoFormatter {
     this.formattingBlocks = new Set(); // 正在格式化的块 ID（避免循环格式化）
     this.currentBlockId = null;   // 当前光标所在的块 ID
     this.previousBlockId = null;  // 上一个光标所在的块 ID
-    this.formatDebounceTimer = null;
     this.config = null;
     this.unsubscribe = null;
+    this.pendingBlockIds = new Set();
+    this.lastQueuedAt = new Map();
+    this.flushTimer = null;
+    this.isFlushing = false;
+    this.lastWriteAt = 0;
+    this.maxBatchSize = 20;
+    this.commitHandlers = [];
+    this.isComposing = false;
+    this.flushReason = "unknown";
+    this.metrics = {
+      cursor_restore_success_count: 0,
+      cursor_restore_fail_count: 0,
+      cursor_jump_count: 0,
+      auto_flush_count: 0,
+      undo_entries_per_auto_flush: []
+    };
   }
 
   /**
@@ -974,20 +1170,24 @@ class AutoFormatter {
    */
   start(config) {
     if (this.unsubscribe) {
-      console.warn(`[${currentPluginName}] AutoFormatter already started`);
+      this.applyConfig(config);
       return;
     }
 
-    this.config = config;
+    this.config = { ...config };
     this.dirtyBlocks.clear();
+    this.pendingBlockIds.clear();
     this.currentBlockId = null;
     this.previousBlockId = null;
+    this.isComposing = false;
+    this.flushReason = "start";
 
     // 订阅状态变化
     if (window.Valtio && typeof window.Valtio.subscribe === 'function') {
       this.unsubscribe = window.Valtio.subscribe(orca.state, (ops) => {
         this.handleStateChange(ops);
       });
+      this.startCommitHandlers();
       console.log(`[${currentPluginName}] AutoFormatter started`);
     } else {
       console.error(`[${currentPluginName}] AutoFormatter: Valtio.subscribe not available`);
@@ -1002,19 +1202,32 @@ class AutoFormatter {
       this.unsubscribe();
       this.unsubscribe = null;
     }
-
-    if (this.formatDebounceTimer) {
-      clearTimeout(this.formatDebounceTimer);
-      this.formatDebounceTimer = null;
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
     }
+    this.stopCommitHandlers();
 
     this.dirtyBlocks.clear();
     this.formattingBlocks.clear();
+    this.pendingBlockIds.clear();
+    this.lastQueuedAt.clear();
     this.currentBlockId = null;
     this.previousBlockId = null;
     this.config = null;
+    this.isFlushing = false;
+    this.lastWriteAt = 0;
+    this.isComposing = false;
+    this.flushReason = "stopped";
 
     console.log(`[${currentPluginName}] AutoFormatter stopped`);
+  }
+
+  applyConfig(config) {
+    this.config = { ...config };
+    if (!toBool(this.config?.autoWriteOnCommitOnly)) {
+      this.scheduleFlush("config-change");
+    }
   }
 
   /**
@@ -1023,39 +1236,40 @@ class AutoFormatter {
   handleStateChange(ops) {
     ops.forEach(op => {
       const [type, path, newValue, oldValue] = op;
+      if (type !== 'set' || !Array.isArray(path)) return;
 
-      if (type === 'set' && path.length === 2 && path[0] === 'blocks') {
-        const blockId = path[1];
+      if (path.length === 2 && path[0] === 'blocks') {
+        const blockId = String(path[1]);
 
         if (!oldValue && newValue) {
           if (this.dirtyBlocks.size > 0) {
             const blocksToFormat = Array.from(this.dirtyBlocks);
             setTimeout(() => {
               blocksToFormat.forEach(dirtyBlockId => {
-                if (dirtyBlockId !== blockId) this.scheduleFormat(dirtyBlockId);
+                if (dirtyBlockId !== blockId) this.enqueueDirtyBlock(dirtyBlockId, "block-created");
               });
+              if (!toBool(this.config?.autoWriteOnCommitOnly)) this.scheduleFlush("block-created");
             }, 150);
           }
         }
         else if (newValue && oldValue && newValue.text !== oldValue.text) {
           if (this.formattingBlocks.has(blockId)) return;
-          this.dirtyBlocks.add(blockId);
+          this.markDirty(blockId);
+          if (!toBool(this.config?.autoWriteOnCommitOnly)) {
+            this.enqueueDirtyBlock(blockId, "state-change");
+            this.scheduleFlush("state-change");
+          }
         }
       }
 
-      if (type === 'set') {
-        const pathStr = path.join('.');
-        if (pathStr.includes('viewState') && pathStr.includes('selection')) {
-          if (path.length >= 6 && path[3] === 'viewState' && path[5] === 'selection') {
-            this.handleCursorMove(path[4]);
-          } else {
-            // DOM fallback
-            const sel = window.getSelection?.();
-            if (sel?.rangeCount) {
-              const bid = findBlockIdFromNode(sel.getRangeAt(0).commonAncestorContainer);
-              if (bid) this.handleCursorMove(bid);
-            }
-          }
+      if (path.length >= 6 && path[3] === 'viewState' && path[5] === 'selection') {
+        this.handleCursorMove(path[4]);
+      } else if (path.length >= 3 && path[path.length - 1] === 'selection' && path.includes('viewState')) {
+        // DOM fallback
+        const sel = window.getSelection?.();
+        if (sel?.rangeCount) {
+          const bid = findBlockIdFromNode(sel.getRangeAt(0).commonAncestorContainer);
+          if (bid) this.handleCursorMove(bid);
         }
       }
     });
@@ -1065,86 +1279,347 @@ class AutoFormatter {
    * 处理光标移动到新块
    */
   handleCursorMove(newBlockId) {
-    if (!newBlockId || newBlockId === this.currentBlockId) return;
+    const nextId = String(newBlockId || "");
+    if (!nextId || nextId === this.currentBlockId) return;
     this.previousBlockId = this.currentBlockId;
-    this.currentBlockId = newBlockId;
+    this.currentBlockId = nextId;
     if (this.previousBlockId && this.dirtyBlocks.has(this.previousBlockId)) {
-      this.scheduleFormat(this.previousBlockId);
+      this.enqueueDirtyBlock(this.previousBlockId, "leave-block");
+      this.scheduleFlush("leave-block");
     }
   }
 
-  /**
-   * 调度格式化操作
-   */
-  scheduleFormat(blockId) {
-    if (this.formatDebounceTimer) {
-      clearTimeout(this.formatDebounceTimer);
-    }
+  markDirty(blockId) {
+    if (!blockId) return;
+    this.dirtyBlocks.add(String(blockId));
+  }
 
-    this.formatDebounceTimer = setTimeout(() => {
-      this.formatBlock(blockId);
-      this.formatDebounceTimer = null;
-    }, 0); // 立即执行，不防抖，避免 OrcaNote 覆盖
+  enqueueDirtyBlock(blockId, reason) {
+    if (!blockId) return;
+    const id = String(blockId);
+    if (!this.dirtyBlocks.has(id)) return;
+    const now = Date.now();
+    const dedupeWindowMs = 300;
+    const lastAt = this.lastQueuedAt.get(id) || 0;
+    if (now - lastAt < dedupeWindowMs) return;
+    this.lastQueuedAt.set(id, now);
+    this.pendingBlockIds.add(id);
+    if (debugLogsEnabled) {
+      console.log(`[${currentPluginName}] Auto enqueue block=${id} reason=${reason || "unknown"} dirty=${this.dirtyBlocks.size} pending=${this.pendingBlockIds.size}`);
+    }
+  }
+
+  resolveBlockIdFromEventTarget(target) {
+    const bid = findBlockIdFromNode(target);
+    if (bid) return String(bid);
+    const sel = window.getSelection?.();
+    if (sel?.rangeCount) {
+      const b2 = findBlockIdFromNode(sel.getRangeAt(0).commonAncestorContainer);
+      if (b2) return String(b2);
+    }
+    return this.currentBlockId ? String(this.currentBlockId) : null;
+  }
+
+  startCommitHandlers() {
+    const entries = [
+      {
+        t: "compositionstart",
+        h: () => {
+          this.isComposing = true;
+        }
+      },
+      {
+        t: "compositionend",
+        h: (e) => {
+          this.isComposing = false;
+          const bid = this.resolveBlockIdFromEventTarget(e?.target);
+          if (bid) this.markDirty(bid);
+          this.enqueueDirtyBlock(bid, "compositionend");
+          this.scheduleFlush("compositionend");
+        }
+      },
+      {
+        t: "paste",
+        h: (e) => {
+          const bid = this.resolveBlockIdFromEventTarget(e?.target);
+          if (bid) this.markDirty(bid);
+          this.enqueueDirtyBlock(bid, "paste");
+          this.scheduleFlush("paste");
+        }
+      },
+      {
+        t: "focusout",
+        h: (e) => {
+          const bid = this.resolveBlockIdFromEventTarget(e?.target);
+          if (bid && this.dirtyBlocks.has(bid)) {
+            this.enqueueDirtyBlock(bid, "blur");
+            this.scheduleFlush("blur");
+          }
+        }
+      },
+      {
+        t: "keydown",
+        h: (e) => {
+          if (e?.key !== "Enter") return;
+          const bid = this.resolveBlockIdFromEventTarget(e?.target);
+          if (bid) this.markDirty(bid);
+          this.enqueueDirtyBlock(bid, "enter");
+          this.scheduleFlush("enter");
+        }
+      }
+    ];
+    entries.forEach(item => document.addEventListener(item.t, item.h, true));
+    this.commitHandlers = entries;
+  }
+
+  stopCommitHandlers() {
+    if (!this.commitHandlers?.length) return;
+    this.commitHandlers.forEach(item => document.removeEventListener(item.t, item.h, true));
+    this.commitHandlers = [];
+  }
+
+  scheduleFlush(reason) {
+    if (this.flushTimer || this.isFlushing) return;
+    const delay = this.config?.autoBatchFlushMs ?? 16;
+    this.flushReason = reason || this.flushReason || "scheduled";
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      this.flushQueuedBlocks();
+    }, Math.max(0, delay));
+  }
+
+  async flushQueuedBlocks() {
+    if (this.isFlushing) return;
+    this.isFlushing = true;
+    try {
+      if (toBool(this.config?.autoWriteOnCommitOnly) && this.isComposing) return;
+      const intervalMs = this.config?.autoMinWriteIntervalMs ?? 80;
+      const waitMs = intervalMs - (Date.now() - this.lastWriteAt);
+      if (waitMs > 0) await sleep(waitMs);
+
+      const candidates = Array.from(this.pendingBlockIds).slice(0, this.maxBatchSize);
+      if (!candidates.length) return;
+      candidates.forEach(id => this.pendingBlockIds.delete(id));
+
+      const updates = [];
+      const startedAt = performance.now();
+      for (const blockId of candidates) {
+        const update = await this.formatBlock(blockId);
+        if (update) updates.push(update);
+      }
+      if (updates.length) {
+        await this.updateBlocksContent(updates, this.flushReason);
+        this.lastWriteAt = Date.now();
+      }
+      this.metrics.auto_flush_count++;
+      if (debugLogsEnabled) {
+        const cost = (performance.now() - startedAt).toFixed(1);
+        const success = this.metrics.cursor_restore_success_count;
+        const fail = this.metrics.cursor_restore_fail_count;
+        const rate = success + fail > 0 ? ((success * 100) / (success + fail)).toFixed(1) : "100.0";
+        const undoStatLen = this.metrics.undo_entries_per_auto_flush.length;
+        const undoPerFlush = undoStatLen > 0 ? this.metrics.undo_entries_per_auto_flush[undoStatLen - 1] : 0;
+        console.log(`[${currentPluginName}] Auto flush reason=${this.flushReason} candidates=${candidates.length} updates=${updates.length} queue=${this.pendingBlockIds.size} cost=${cost}ms cursor_restore_success_rate=${rate}% cursor_jump_count=${this.metrics.cursor_jump_count} undo_entries_per_auto_flush=${undoPerFlush}`);
+      }
+    } finally {
+      this.isFlushing = false;
+      this.flushReason = "scheduled";
+      if (this.pendingBlockIds.size > 0) {
+        this.scheduleFlush("pending-remain");
+      }
+    }
   }
 
   /**
    * 格式化块
    */
   async formatBlock(blockId) {
-    if (!this.dirtyBlocks.has(blockId)) return;
+    const id = String(blockId);
+    if (!this.dirtyBlocks.has(id)) return null;
 
     try {
-      const block = orca.state.blocks[blockId];
+      if (toBool(this.config?.autoWriteOnCommitOnly) && this.currentBlockId === id && this.flushReason === "state-change") {
+        return null;
+      }
+      const block = orca.state.blocks[id];
       if (!block) {
-        console.warn(`[${currentPluginName}] Block not found: ${blockId}`);
-        this.dirtyBlocks.delete(blockId);
-        return;
+        console.warn(`[${currentPluginName}] Block not found: ${id}`);
+        this.dirtyBlocks.delete(id);
+        return null;
       }
 
       // 如果内容为空，跳过格式化
       if (!block.text?.trim()) {
-        this.dirtyBlocks.delete(blockId);
-        return;
+        this.dirtyBlocks.delete(id);
+        return null;
       }
 
       // 使用 formatContentFragments 保留富文本格式（bold/italic 等）
       const newContent = formatContentFragments(block.content || [], this.config);
 
       // newContent 为 null 表示无变化
+      this.dirtyBlocks.delete(id);
       if (newContent) {
-        await this.updateBlockContent(blockId, newContent);
+        return {
+          id: parseInt(id, 10),
+          content: newContent,
+          oldContent: Array.isArray(block.content) ? block.content.map(f => ({ ...f })) : []
+        };
       }
-
-      this.dirtyBlocks.delete(blockId);
+      return null;
     } catch (error) {
       console.error(`[${currentPluginName}] Format block error:`, error);
+      return null;
+    }
+  }
+
+  getCursorSnapshot() {
+    try {
+      const selection = window.getSelection?.();
+      if (!selection) return null;
+      if (orca?.utils?.getCursorDataFromSelection) {
+        const cursor = orca.utils.getCursorDataFromSelection(selection);
+        return cursor ? JSON.parse(JSON.stringify(cursor)) : null;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  mapOffsetByDiff(oldText, newText, offset) {
+    const oldStr = String(oldText || "");
+    const newStr = String(newText || "");
+    const oldLen = oldStr.length;
+    const newLen = newStr.length;
+    const safeOffset = Math.max(0, Math.min(oldLen, Number(offset) || 0));
+    if (oldStr === newStr) return Math.max(0, Math.min(newLen, safeOffset));
+
+    let prefix = 0;
+    while (prefix < oldLen && prefix < newLen && oldStr[prefix] === newStr[prefix]) prefix++;
+
+    let suffix = 0;
+    while (
+      suffix < oldLen - prefix &&
+      suffix < newLen - prefix &&
+      oldStr[oldLen - 1 - suffix] === newStr[newLen - 1 - suffix]
+    ) {
+      suffix++;
+    }
+
+    if (safeOffset <= prefix) return safeOffset;
+    const oldTailStart = oldLen - suffix;
+    const newTailStart = newLen - suffix;
+    if (safeOffset >= oldTailStart) {
+      const fromTail = oldLen - safeOffset;
+      return Math.max(0, Math.min(newLen, newLen - fromTail));
+    }
+    return Math.max(0, Math.min(newLen, newTailStart));
+  }
+
+  remapCursorNode(nodeData, updatesMap) {
+    if (!nodeData || typeof nodeData !== "object") return nodeData;
+    const blockKey = String(nodeData.blockId ?? "");
+    const update = updatesMap.get(blockKey);
+    if (!update) return { ...nodeData };
+
+    const mapped = { ...nodeData };
+    const oldContent = Array.isArray(update.oldContent) ? update.oldContent : [];
+    const newContent = Array.isArray(update.content) ? update.content : [];
+    const idx = Number(mapped.index);
+    if (!Number.isInteger(idx) || idx < 0) return mapped;
+
+    if (idx >= newContent.length) {
+      mapped.index = Math.max(0, newContent.length - 1);
+      mapped.offset = 0;
+      return mapped;
+    }
+
+    const oldFrag = oldContent[idx];
+    const newFrag = newContent[idx];
+    if (oldFrag?.t === "t" && newFrag?.t === "t" && typeof oldFrag.v === "string" && typeof newFrag.v === "string") {
+      const oldOffset = Number(mapped.offset) || 0;
+      mapped.offset = this.mapOffsetByDiff(oldFrag.v, newFrag.v, oldOffset);
+    } else {
+      const len = typeof newFrag?.v === "string" ? newFrag.v.length : 0;
+      mapped.offset = Math.max(0, Math.min(len, Number(mapped.offset) || 0));
+    }
+    return mapped;
+  }
+
+  remapCursorData(cursorData, updatesMap) {
+    if (!cursorData) return null;
+    const remapped = JSON.parse(JSON.stringify(cursorData));
+    remapped.anchor = this.remapCursorNode(remapped.anchor, updatesMap);
+    remapped.focus = this.remapCursorNode(remapped.focus, updatesMap);
+    return remapped;
+  }
+
+  async runSetBlocksContentWithUndoPolicy(cursorData, payload) {
+    const invoke = async () => {
+      await orca.commands.invokeEditorCommand(
+        "core.editor.setBlocksContent",
+        toBool(this.config?.autoCursorRecovery) ? cursorData : null,
+        payload,
+        toBool(this.config?.autoCursorRecovery)
+      );
+    };
+
+    const expectedUndoEntries = toBool(this.config?.autoUndoSingleStep) ? 1 : payload.length;
+    this.metrics.undo_entries_per_auto_flush.push(expectedUndoEntries);
+    if (this.metrics.undo_entries_per_auto_flush.length > 200) {
+      this.metrics.undo_entries_per_auto_flush.shift();
+    }
+
+    if (toBool(this.config?.autoUndoSingleStep) && orca?.commands?.invokeGroup) {
+      await orca.commands.invokeGroup(async () => {
+        await invoke();
+      }, { undoable: true, topGroup: true });
+    } else {
+      await invoke();
     }
   }
 
   /**
    * 更新块内容（保留富文本格式）
    */
-  async updateBlockContent(blockId, newContent) {
+  async updateBlocksContent(updates, reason) {
     try {
-      if (!orca.state.blocks?.[blockId]) return;
+      if (!updates?.length) return;
+      const validUpdates = updates.filter(item => item && orca.state.blocks?.[String(item.id)] && Array.isArray(item.content));
+      if (!validUpdates.length) return;
+      validUpdates.forEach(item => this.formattingBlocks.add(String(item.id)));
+      const payload = validUpdates.map(item => ({ id: item.id, content: item.content }));
+      const updatesMap = new Map(validUpdates.map(item => [String(item.id), { content: item.content, oldContent: item.oldContent }]));
 
-      this.formattingBlocks.add(blockId);
+      const beforeCursor = toBool(this.config?.autoCursorRecovery) ? this.getCursorSnapshot() : null;
+      const remappedCursor = beforeCursor ? this.remapCursorData(beforeCursor, updatesMap) : null;
 
-      await orca.commands.invokeEditorCommand(
-        "core.editor.setBlocksContent",
-        null,
-        [{ id: parseInt(blockId), content: newContent }],
-        false
-      );
+      await this.runSetBlocksContentWithUndoPolicy(beforeCursor, payload);
 
-      console.log(`[${currentPluginName}] Block ${blockId} content updated`);
+      if (toBool(this.config?.autoCursorRecovery) && remappedCursor && orca?.utils?.setSelectionFromCursorData) {
+        try {
+          await orca.utils.setSelectionFromCursorData(remappedCursor);
+          this.metrics.cursor_restore_success_count++;
+        } catch (_) {
+          this.metrics.cursor_restore_fail_count++;
+        }
+      }
+
+      if (beforeCursor && remappedCursor) {
+        const beforeAnchorBlock = String(beforeCursor.anchor?.blockId ?? "");
+        const afterAnchorBlock = String(remappedCursor.anchor?.blockId ?? "");
+        if (beforeAnchorBlock && afterAnchorBlock && beforeAnchorBlock !== afterAnchorBlock) {
+          this.metrics.cursor_jump_count++;
+        }
+      }
+
+      console.log(`[${currentPluginName}] Updated ${validUpdates.length} block(s) content`);
 
       setTimeout(() => {
-        this.formattingBlocks.delete(blockId);
+        validUpdates.forEach(item => this.formattingBlocks.delete(String(item.id)));
       }, 500);
     } catch (error) {
       console.error(`[${currentPluginName}] Update block content error:`, error);
-      this.formattingBlocks.delete(blockId);
+      updates?.forEach(item => this.formattingBlocks.delete(String(item.id)));
     }
   }
 }
